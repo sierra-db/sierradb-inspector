@@ -1,6 +1,7 @@
 import { SierraDBEvent } from '../types.js'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { JsonViewer } from '@/components/JsonViewer'
 import { 
   Calendar, 
   Hash, 
@@ -20,15 +21,6 @@ export function EventCard({ event }: EventCardProps) {
   
   const formatTimestamp = (timestamp: number) => {
     return new Date(timestamp / 1000000).toLocaleString()
-  }
-
-  const formatJson = (text: string | null) => {
-    if (!text) return 'null'
-    try {
-      return JSON.stringify(JSON.parse(text), null, 2)
-    } catch {
-      return text
-    }
   }
 
   return (
@@ -94,18 +86,14 @@ export function EventCard({ event }: EventCardProps) {
             {event.metadata && (
               <div>
                 <h4 className="font-medium mb-2">Metadata</h4>
-                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
-                  {formatJson(event.metadata)}
-                </pre>
+                <JsonViewer content={event.metadata} title="metadata" />
               </div>
             )}
             
             {event.payload && (
               <div>
                 <h4 className="font-medium mb-2">Payload</h4>
-                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
-                  {formatJson(event.payload)}
-                </pre>
+                <JsonViewer content={event.payload} title="payload" />
               </div>
             )}
           </div>
