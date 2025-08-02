@@ -42,24 +42,11 @@ export function PartitionExplorer() {
     }
   }
 
-  const generatePartitionButtons = () => {
-    const buttons = []
-    for (let i = 0; i < 32; i++) {
-      buttons.push(
-        <Button
-          key={i}
-          variant={partition === i.toString() ? "default" : "outline"}
-          size="sm"
-          onClick={() => {
-            setPartition(i.toString())
-            navigate(`/partitions/${i}`)
-          }}
-        >
-          {i}
-        </Button>
-      )
-    }
-    return buttons
+  const getRandomPartition = () => Math.floor(Math.random() * 1024).toString()
+  
+  const handlePartitionSelect = (partitionId: string) => {
+    setPartition(partitionId)
+    navigate(`/partitions/${partitionId}`)
   }
 
   const loadNext = () => {
@@ -105,26 +92,56 @@ export function PartitionExplorer() {
         <CardHeader>
           <CardTitle>Partition Selection</CardTitle>
           <CardDescription>
-            SierraDB has 1,024 partitions (0-1023). Quick access to first 32 partitions:
+            SierraDB has 1,024 partitions (0-1023). Enter a partition ID or UUID, or try these quick options:
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {generatePartitionButtons()}
-            <span className="text-muted-foreground self-center">... (and 992 more)</span>
-          </div>
-          
-          <div className="flex gap-2">
-            <Input
-              placeholder="Partition ID (0-1023) or UUID"
-              value={partition}
-              onChange={(e) => setPartition(e.target.value)}
-              className="flex-1"
-            />
-            <Button onClick={handleSearch} disabled={!partition}>
-              <Search className="h-4 w-4 mr-2" />
-              Load Partition
-            </Button>
+          <div className="space-y-4">
+            {/* Quick partition shortcuts */}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePartitionSelect('0')}
+              >
+                First (0)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePartitionSelect('511')}
+              >
+                Middle (511)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePartitionSelect('1023')}
+              >
+                Last (1023)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePartitionSelect(getRandomPartition())}
+              >
+                Random
+              </Button>
+            </div>
+            
+            {/* Main partition input */}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Partition ID (0-1023) or UUID"
+                value={partition}
+                onChange={(e) => setPartition(e.target.value)}
+                className="flex-1"
+              />
+              <Button onClick={handleSearch} disabled={!partition}>
+                <Search className="h-4 w-4 mr-2" />
+                Load Partition
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
