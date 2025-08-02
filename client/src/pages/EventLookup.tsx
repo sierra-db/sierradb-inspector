@@ -21,14 +21,21 @@ export function EventLookup() {
   const [eventId, setEventId] = useState(urlEventId || '')
   const [copied, setCopied] = useState(false)
   
+  const isValidUUID = (uuid: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    return uuidRegex.test(uuid)
+  }
+  
+  const hasValidationError = eventId.length > 0 && !isValidUUID(eventId)
+  
   const { data: event, isLoading, error, refetch } = useQuery({
     queryKey: ['event-get', eventId],
     queryFn: () => api.getEvent(eventId),
-    enabled: !!eventId,
+    enabled: !!eventId && isValidUUID(eventId),
   })
 
   const handleSearch = () => {
-    if (eventId) {
+    if (eventId && isValidUUID(eventId)) {
       navigate(`/events/${encodeURIComponent(eventId)}`)
       refetch()
     }
@@ -48,11 +55,6 @@ export function EventLookup() {
     }
   }
 
-  const sampleEventIds = [
-    '550e8400-e29b-41d4-a716-446655440000',
-    '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
-    '6ba7b811-9dad-11d1-80b4-00c04fd430c8',
-  ]
 
   return (
     <div className="space-y-6">
@@ -75,37 +77,32 @@ export function EventLookup() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Event ID (UUID, e.g., 550e8400-e29b-41d4-a716-446655440000)"
-                value={eventId}
-                onChange={(e) => setEventId(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="flex-1 font-mono"
-              />
-              <Button onClick={handleSearch} disabled={!eventId}>
-                <Search className="h-4 w-4 mr-2" />
-                Lookup
-              </Button>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Event ID (UUID, e.g., 550e8400-e29b-41d4-a716-446655440000)"
+                  value={eventId}
+                  onChange={(e) => setEventId(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className={`flex-1 font-mono ${hasValidationError ? 'border-red-500 focus:ring-red-500' : ''}`}
+                />
+                <Button onClick={handleSearch} disabled={!eventId || hasValidationError}>
+                  <Search className="h-4 w-4 mr-2" />
+                  Lookup
+                </Button>
+              </div>
+              {hasValidationError && (
+                <p className="text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  Please enter a valid UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000)
+                </p>
+              )}
             </div>
             
             <div>
-              <p className="text-sm text-muted-foreground mb-2">
-                Try these sample event IDs (these may not exist in your database):
+              <p className="text-sm text-muted-foreground">
+                💡 Tip: You can find actual event IDs by browsing partitions or streams first
               </p>
-              <div className="flex flex-wrap gap-2">
-                {sampleEventIds.map((sampleId) => (
-                  <Button
-                    key={sampleId}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEventId(sampleId)}
-                    className="font-mono text-xs"
-                  >
-                    {sampleId.slice(0, 8)}...
-                  </Button>
-                ))}
-              </div>
             </div>
           </div>
         </CardContent>
