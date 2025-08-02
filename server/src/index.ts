@@ -10,7 +10,7 @@ import {
 
 const app = express()
 const port = process.env.PORT || 3001
-const sierraDBUrl = process.env.SIERRADB_URL || 'redis://localhost:6379'
+const sierraDBUrl = process.env.SIERRADB_URL || 'redis://localhost:9090'
 
 app.use(cors())
 app.use(express.json())
@@ -112,7 +112,7 @@ app.get('/api/streams/:stream_id/scan', async (req, res) => {
       stream_id: req.params.stream_id,
       ...req.query,
     })
-    
+
     const result = await sierraDB.scanStream(queryParams)
     res.json(result)
   } catch (error) {
@@ -129,7 +129,7 @@ async function startServer() {
   try {
     await sierraDB.connect()
     console.log('Connected to SierraDB')
-    
+
     app.listen(port, () => {
       console.log(`SierraDB Inspector server running on port ${port}`)
     })

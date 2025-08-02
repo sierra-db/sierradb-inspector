@@ -18,8 +18,8 @@ import {
 export class SierraDBClient {
   private client: any
 
-  constructor(url: string = 'redis://localhost:6379') {
-    this.client = createClient({ 
+  constructor(url: string = 'redis://localhost:9090') {
+    this.client = createClient({
       url,
       RESP: 3, // Enable RESP3
     })
@@ -40,7 +40,7 @@ export class SierraDBClient {
 
   async getEvent(params: EventGetParams): Promise<EventGetResponse> {
     const result = await this.client.sendCommand(['EGET', params.event_id])
-    
+
     if (result === null) {
       return null
     }
@@ -65,14 +65,14 @@ export class SierraDBClient {
 
   async scanPartition(params: PartitionScanParams): Promise<PartitionScanResponse> {
     const args = ['EPSCAN', params.partition.toString(), params.start_sequence.toString(), params.end_sequence.toString()]
-    
+
     if (params.count !== undefined) {
       args.push('COUNT', params.count.toString())
     }
 
     const result = await this.client.sendCommand(args)
     const resultArray = result as [boolean, any[][]]
-    
+
     const response = {
       has_more: resultArray[0],
       events: resultArray[1].map((eventArray: any[]) => ({
@@ -95,18 +95,18 @@ export class SierraDBClient {
 
   async scanStream(params: StreamScanParams): Promise<StreamScanResponse> {
     const args = ['ESCAN', params.stream_id, params.start_version.toString(), params.end_version.toString()]
-    
+
     if (params.partition_key !== undefined) {
       args.push('PARTITION_KEY', params.partition_key)
     }
-    
+
     if (params.count !== undefined) {
       args.push('COUNT', params.count.toString())
     }
 
     const result = await this.client.sendCommand(args)
     const resultArray = result as [boolean, any[][]]
-    
+
     const response = {
       has_more: resultArray[0],
       events: resultArray[1].map((eventArray: any[]) => ({

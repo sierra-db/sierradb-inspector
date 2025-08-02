@@ -192,7 +192,7 @@ cd ..
 ### Environment Variables
 The server accepts these environment variables:
 - `PORT` - Server port (default: 3001)
-- `SIERRADB_URL` - Redis connection URL for SierraDB (default: redis://localhost:6379)
+- `SIERRADB_URL` - Redis connection URL for SierraDB (default: redis://localhost:9090)
 
 ### Project Structure
 - `client/` - React frontend application with Vite build system

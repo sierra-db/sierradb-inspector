@@ -21,7 +21,7 @@ This is a monorepo containing:
 ## Prerequisites
 
 - Node.js 18+ 
-- SierraDB instance running on Redis protocol (default: `redis://localhost:6379`)
+- SierraDB instance running on Redis protocol (default: `redis://localhost:9090`)
 
 ## Quick Start
 
@@ -45,7 +45,7 @@ This is a monorepo containing:
 Create a `.env` file in the server directory to configure SierraDB connection:
 
 ```env
-SIERRADB_URL=redis://localhost:6379
+SIERRADB_URL=redis://localhost:9090
 PORT=3001
 ```
 
