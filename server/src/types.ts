@@ -66,6 +66,7 @@ export interface EventGetParams {
 export const ProjectionRunRequestSchema = z.object({
   code: z.string().min(1, 'Projection code is required'),
   initialState: z.any().optional(),
+  streamId: z.string().optional(),
 })
 
 export const ProjectionProgressSchema = z.object({
@@ -79,3 +80,42 @@ export const ProjectionProgressSchema = z.object({
 
 export type ProjectionRunRequest = z.infer<typeof ProjectionRunRequestSchema>
 export type ProjectionProgress = z.infer<typeof ProjectionProgressSchema>
+
+// Debug Session Types
+export const DebugSessionStartRequestSchema = z.object({
+  code: z.string().min(1, 'Projection code is required'),
+  initialState: z.any().optional(),
+  streamId: z.string().optional(),
+})
+
+export const DebugStepRequestSchema = z.object({
+  sessionId: z.string(),
+})
+
+export const DebugSessionStatusSchema = z.object({
+  sessionId: z.string(),
+  status: z.enum(['idle', 'running', 'paused', 'completed', 'error']),
+  currentPartition: z.number(),
+  currentEventIndex: z.number(),
+  totalEventsLoaded: z.number(),
+  currentState: z.any(),
+  currentEvent: SierraDBEventSchema.nullable(),
+  previousState: z.any().nullable(),
+  consoleLogs: z.array(z.object({
+    timestamp: z.number(),
+    level: z.enum(['log', 'warn', 'error']),
+    message: z.string(),
+  })),
+  error: z.string().optional(),
+})
+
+export const DebugStepResponseSchema = z.object({
+  sessionStatus: DebugSessionStatusSchema,
+  stateChanged: z.boolean(),
+  processingComplete: z.boolean(),
+})
+
+export type DebugSessionStartRequest = z.infer<typeof DebugSessionStartRequestSchema>
+export type DebugStepRequest = z.infer<typeof DebugStepRequestSchema>
+export type DebugSessionStatus = z.infer<typeof DebugSessionStatusSchema>
+export type DebugStepResponse = z.infer<typeof DebugStepResponseSchema>

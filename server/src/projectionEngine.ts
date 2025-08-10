@@ -13,17 +13,14 @@ export class ProjectionEngine {
   async runProjection(
     code: string,
     initialState: any = null,
-    onProgress: (progress: ProjectionProgress) => void
+    onProgress: (progress: ProjectionProgress) => void,
+    streamId?: string
   ): Promise<void> {
     this.abortController = new AbortController()
     let currentState = initialState
     let eventsProcessed = 0
 
     try {
-      // Get server info to determine total partitions
-      const serverInfo = await this.sierraDB.hello()
-      const totalPartitions = serverInfo.num_partitions
-
       // Create isolated VM context
       const isolate = new ivm.Isolate({ memoryLimit: 128 }) // 128MB limit
       const context = await isolate.createContext()
@@ -51,44 +48,78 @@ export class ProjectionEngine {
         JSON.stringify(global.projectFunction(currentState, currentEvent));
       `)
 
-      // Process each partition sequentially
-      for (let partition = 0; partition < totalPartitions; partition++) {
-        if (this.abortController?.signal.aborted) {
-          break
+      if (streamId) {
+        // Stream-specific projection
+        currentState = await this.processStream(
+          streamId,
+          currentState,
+          context,
+          executionScript,
+          (newState, newEventsProcessed, currentVersion, totalVersions) => {
+            eventsProcessed += newEventsProcessed
+            
+            onProgress({
+              current_partition: currentVersion,
+              total_partitions: totalVersions || currentVersion,
+              events_processed: eventsProcessed,
+              current_state: newState,
+              status: 'running',
+            })
+          }
+        )
+
+        // Send final completion progress for stream
+        onProgress({
+          current_partition: eventsProcessed,
+          total_partitions: eventsProcessed,
+          events_processed: eventsProcessed,
+          current_state: currentState,
+          status: 'completed',
+        })
+      } else {
+        // All events projection (original behavior)
+        const serverInfo = await this.sierraDB.hello()
+        const totalPartitions = serverInfo.num_partitions
+
+        // Process each partition sequentially
+        for (let partition = 0; partition < totalPartitions; partition++) {
+          if (this.abortController?.signal.aborted) {
+            break
+          }
+
+          try {
+            currentState = await this.processPartition(
+              partition, 
+              currentState, 
+              context,
+              executionScript, 
+              (newState, newEventsProcessed) => {
+                eventsProcessed += newEventsProcessed
+                
+                onProgress({
+                  current_partition: partition,
+                  total_partitions: totalPartitions,
+                  events_processed: eventsProcessed,
+                  current_state: newState,
+                  status: 'running',
+                })
+              }
+            )
+          } catch (error) {
+            console.error(`Error processing partition ${partition}:`, error)
+            // Continue with next partition on error
+          }
         }
 
-        try {
-          currentState = await this.processPartition(
-            partition, 
-            currentState, 
-            context,
-            executionScript, 
-            (newState, newEventsProcessed) => {
-              eventsProcessed += newEventsProcessed
-              
-              onProgress({
-                current_partition: partition,
-                total_partitions: totalPartitions,
-                events_processed: eventsProcessed,
-                current_state: newState,
-                status: 'running',
-              })
-            }
-          )
-        } catch (error) {
-          console.error(`Error processing partition ${partition}:`, error)
-          // Continue with next partition on error
-        }
+        // Send final completion progress
+        onProgress({
+          current_partition: totalPartitions,
+          total_partitions: totalPartitions,
+          events_processed: eventsProcessed,
+          current_state: currentState,
+          status: 'completed',
+        })
       }
-
-      // Send final completion progress
-      onProgress({
-        current_partition: totalPartitions,
-        total_partitions: totalPartitions,
-        events_processed: eventsProcessed,
-        current_state: currentState,
-        status: 'completed',
-      })
 
     } catch (error) {
       console.error('Projection error:', error)
@@ -156,6 +187,67 @@ export class ProjectionEngine {
 
       } catch (error) {
         console.error(`Error scanning partition ${partition}:`, error)
+        break
+      }
+    }
+    
+    return currentState
+  }
+
+  private async processStream(
+    streamId: string,
+    initialState: any,
+    context: ivm.Context,
+    executionScript: any,
+    onBatchProgress: (newState: any, eventsProcessed: number, currentVersion: number, totalVersions?: number) => void
+  ): Promise<any> {
+    let startVersion = 0
+    let currentState = initialState
+    let hasMore = true
+    let currentVersion = 0
+    const batchSize = 100
+
+    while (hasMore && !this.abortController?.signal.aborted) {
+      try {
+        const result = await this.sierraDB.scanStream({
+          stream_id: streamId,
+          start_version: startVersion,
+          end_version: '+',
+          count: batchSize,
+        })
+
+        hasMore = result.has_more
+        
+        if (result.events.length === 0) {
+          break
+        }
+
+        // Process events through the projection function
+        for (const event of result.events) {
+          if (this.abortController?.signal.aborted) {
+            break
+          }
+
+          try {
+            // Execute projection function in isolated context
+            currentState = await this.executeProjectionFunction(context, executionScript, currentState, event)
+            currentVersion = event.stream_version
+          } catch (error) {
+            console.error(`Error processing event ${event.event_id}:`, error)
+            // Continue with next event on error
+          }
+        }
+
+        onBatchProgress(currentState, result.events.length, currentVersion)
+
+        // Update start version for next batch
+        if (hasMore && result.events.length > 0) {
+          const lastEvent = result.events[result.events.length - 1]
+          startVersion = lastEvent.stream_version + 1
+        }
+
+      } catch (error) {
+        console.error(`Error scanning stream ${streamId}:`, error)
         break
       }
     }

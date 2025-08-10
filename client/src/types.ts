@@ -38,6 +38,7 @@ export interface HelloResponse {
 export interface ProjectionRunRequest {
   code: string
   initialState?: any
+  streamId?: string
 }
 
 export interface ProjectionProgress {
@@ -47,4 +48,40 @@ export interface ProjectionProgress {
   current_state: any
   status: 'running' | 'completed' | 'error'
   error?: string
+}
+
+// Debug Session Types
+export interface DebugSessionStartRequest {
+  code: string
+  initialState?: any
+  streamId?: string
+}
+
+export interface DebugStepRequest {
+  sessionId: string
+}
+
+export interface ConsoleLog {
+  timestamp: number
+  level: 'log' | 'warn' | 'error'
+  message: string
+}
+
+export interface DebugSessionStatus {
+  sessionId: string
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'error'
+  currentPartition: number
+  currentEventIndex: number
+  totalEventsLoaded: number
+  currentState: any
+  currentEvent: SierraDBEvent | null
+  previousState: any | null
+  consoleLogs: ConsoleLog[]
+  error?: string
+}
+
+export interface DebugStepResponse {
+  sessionStatus: DebugSessionStatus
+  stateChanged: boolean
+  processingComplete: boolean
 }

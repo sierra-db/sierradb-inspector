@@ -9,9 +9,13 @@ import {
   Square, 
   Loader2,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Bug,
+  StepForward,
+  RotateCcw
 } from 'lucide-react'
-import { ProjectionProgress, ProjectionRunRequest } from '../types.js'
+import { ProjectionProgress, ProjectionRunRequest, DebugSessionStatus } from '../types.js'
+import { api } from '@/lib/api'
 
 const defaultProjectionCode = `// Projection function
 // - state: current projection state (starts as null)
@@ -48,9 +52,20 @@ export function ProjectionRunner() {
     return saved || defaultProjectionCode
   })
   
+  // Normal mode state
   const [isRunning, setIsRunning] = useState(false)
   const [progress, setProgress] = useState<ProjectionProgress | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  
+  // Debug mode state
+  const [debugMode, setDebugMode] = useState(false)
+  const [debugSession, setDebugSession] = useState<DebugSessionStatus | null>(null)
+  const [isDebugging, setIsDebugging] = useState(false)
+  const [debugSessionId, setDebugSessionId] = useState<string | null>(null)
+  
+  // Stream mode state
+  const [streamMode, setStreamMode] = useState(false)
+  const [streamId, setStreamId] = useState('')
 
   const saveCodeToStorage = useCallback(() => {
     localStorage.setItem('projection-code', code)
@@ -66,7 +81,8 @@ export function ProjectionRunner() {
 
       const requestBody: ProjectionRunRequest = {
         code,
-        initialState: null
+        initialState: null,
+        ...(streamMode && streamId.trim() && { streamId: streamId.trim() })
       }
 
       // Close existing EventSource if any
@@ -151,6 +167,73 @@ export function ProjectionRunner() {
     setCode(defaultProjectionCode)
   }
 
+  // Debug mode functions
+  const startDebugSession = async () => {
+    if (isDebugging || !code.trim()) return
+
+    try {
+      setIsDebugging(true)
+      saveCodeToStorage()
+
+      const response = await api.debugSessionStart({
+        code,
+        initialState: null,
+        ...(streamMode && streamId.trim() && { streamId: streamId.trim() })
+      })
+
+      setDebugSessionId(response.sessionId)
+      
+      // Get initial session status
+      const status = await api.debugSessionStatus(response.sessionId)
+      setDebugSession(status)
+
+    } catch (error) {
+      console.error('Error starting debug session:', error)
+      setIsDebugging(false)
+    }
+  }
+
+  const stepDebugSession = async () => {
+    if (!debugSessionId) return
+
+    try {
+      const response = await api.debugSessionStep({ sessionId: debugSessionId })
+      setDebugSession(response.sessionStatus)
+
+      if (response.processingComplete) {
+        setIsDebugging(false)
+      }
+    } catch (error) {
+      console.error('Error stepping debug session:', error)
+      setIsDebugging(false)
+    }
+  }
+
+  const resetDebugSession = async () => {
+    if (!debugSessionId) return
+
+    try {
+      const status = await api.debugSessionReset({ sessionId: debugSessionId })
+      setDebugSession(status)
+    } catch (error) {
+      console.error('Error resetting debug session:', error)
+    }
+  }
+
+  const stopDebugSession = async () => {
+    if (debugSessionId) {
+      try {
+        await api.debugSessionDestroy(debugSessionId)
+      } catch (error) {
+        console.error('Error destroying debug session:', error)
+      }
+    }
+    
+    setDebugSessionId(null)
+    setDebugSession(null)
+    setIsDebugging(false)
+  }
+
   const getStatusIcon = () => {
     if (!progress) return null
     
@@ -173,14 +256,57 @@ export function ProjectionRunner() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Calculator className="h-8 w-8" />
-          Projection Runner
-        </h1>
-        <p className="text-muted-foreground mt-2">
-          Write and run custom projections across all events in SierraDB
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <Calculator className="h-8 w-8" />
+            Projection Runner
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Write and run custom projections across all events or specific streams in SierraDB
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <Bug className="h-4 w-4" />
+            <label className="text-sm font-medium">Debug Mode</label>
+            <input
+              type="checkbox"
+              checked={debugMode}
+              onChange={(e) => {
+                setDebugMode(e.target.checked)
+                // Clean up any active sessions when switching modes
+                if (!e.target.checked) {
+                  stopDebugSession()
+                }
+                if (e.target.checked) {
+                  stopProjection()
+                }
+              }}
+              className="w-4 h-4"
+            />
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">Stream Mode</label>
+            <input
+              type="checkbox"
+              checked={streamMode}
+              onChange={(e) => setStreamMode(e.target.checked)}
+              className="w-4 h-4"
+            />
+            {streamMode && (
+              <input
+                type="text"
+                placeholder="Enter stream ID"
+                value={streamId}
+                onChange={(e) => setStreamId(e.target.value)}
+                className="ml-2 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -211,109 +337,263 @@ export function ProjectionRunner() {
               </div>
               
               <div className="flex gap-2">
-                <Button 
-                  onClick={runProjection} 
-                  disabled={isRunning || !code.trim()}
-                  className="flex items-center gap-2"
-                >
-                  {isRunning ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                  {isRunning ? 'Running...' : 'Run Projection'}
-                </Button>
-                
-                {isRunning && (
-                  <Button 
-                    variant="outline" 
-                    onClick={stopProjection}
-                    className="flex items-center gap-2"
-                  >
-                    <Square className="h-4 w-4" />
-                    Stop
-                  </Button>
+                {debugMode ? (
+                  // Debug mode controls
+                  <>
+                    {!debugSessionId ? (
+                      <Button 
+                        onClick={startDebugSession} 
+                        disabled={isDebugging || !code.trim()}
+                        className="flex items-center gap-2"
+                      >
+                        {isDebugging ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Bug className="h-4 w-4" />
+                        )}
+                        {isDebugging ? 'Starting...' : 'Start Debug'}
+                      </Button>
+                    ) : (
+                      <>
+                        <Button 
+                          onClick={stepDebugSession} 
+                          disabled={debugSession?.status === 'completed' || debugSession?.status === 'error'}
+                          className="flex items-center gap-2"
+                        >
+                          <StepForward className="h-4 w-4" />
+                          Step
+                        </Button>
+                        
+                        <Button 
+                          variant="outline" 
+                          onClick={resetDebugSession}
+                          disabled={debugSession?.status === 'running'}
+                          className="flex items-center gap-2"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Reset
+                        </Button>
+                        
+                        <Button 
+                          variant="outline" 
+                          onClick={stopDebugSession}
+                          className="flex items-center gap-2"
+                        >
+                          <Square className="h-4 w-4" />
+                          Stop
+                        </Button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  // Normal mode controls
+                  <>
+                    <Button 
+                      onClick={runProjection} 
+                      disabled={isRunning || !code.trim()}
+                      className="flex items-center gap-2"
+                    >
+                      {isRunning ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                      {isRunning ? 'Running...' : 'Run Projection'}
+                    </Button>
+                    
+                    {isRunning && (
+                      <Button 
+                        variant="outline" 
+                        onClick={stopProjection}
+                        className="flex items-center gap-2"
+                      >
+                        <Square className="h-4 w-4" />
+                        Stop
+                      </Button>
+                    )}
+                    
+                    <Button 
+                      variant="outline" 
+                      onClick={resetProjection}
+                      disabled={isRunning}
+                    >
+                      Reset
+                    </Button>
+                  </>
                 )}
-                
-                <Button 
-                  variant="outline" 
-                  onClick={resetProjection}
-                  disabled={isRunning}
-                >
-                  Reset
-                </Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Progress and Results */}
+        {/* Progress and Results / Debug Interface */}
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              Progress & Results
-              {getStatusIcon()}
+              {debugMode ? 'Debug Interface' : 'Progress & Results'}
+              {debugMode && debugSession?.status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+              {debugMode && debugSession?.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-500" />}
+              {debugMode && debugSession?.status === 'error' && <AlertCircle className="h-4 w-4 text-red-500" />}
+              {!debugMode && getStatusIcon()}
             </CardTitle>
             <CardDescription>
-              Live projection progress and current state
+              {debugMode 
+                ? 'Step through events and inspect state changes' 
+                : 'Live projection progress and current state'
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {progress && (
-                <>
-                  {/* Progress Bar */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Processing Partitions</span>
-                      <span>{progress.current_partition} / {progress.total_partitions}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${getProgressPercentage()}%` }}
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {getProgressPercentage()}% complete • {progress.events_processed.toLocaleString()} events processed
-                    </div>
-                  </div>
-
-                  {/* Status */}
-                  <div className="flex items-center gap-2 p-2 rounded bg-muted">
-                    {getStatusIcon()}
-                    <span className="text-sm font-medium">
-                      Status: {progress.status.charAt(0).toUpperCase() + progress.status.slice(1)}
-                    </span>
-                    {progress.error && (
-                      <span className="text-xs text-red-600 ml-2">
-                        {progress.error}
+            {debugMode ? (
+              // Debug Mode Interface
+              <div className="space-y-4">
+                {debugSession ? (
+                  <>
+                    {/* Debug Status */}
+                    <div className="flex items-center gap-2 p-2 rounded bg-muted">
+                      <Bug className="h-4 w-4" />
+                      <span className="text-sm font-medium">
+                        Status: {debugSession.status.charAt(0).toUpperCase() + debugSession.status.slice(1)}
                       </span>
-                    )}
-                  </div>
+                      {debugSession.error && (
+                        <span className="text-xs text-red-600 ml-2">
+                          {debugSession.error}
+                        </span>
+                      )}
+                    </div>
 
-                  {/* Current State */}
-                  {progress.current_state && (
-                    <div>
-                      <h4 className="font-medium mb-2">Current Projection State</h4>
-                      <div className="border rounded-lg p-2 max-h-[40rem] overflow-auto">
-                        <JsonViewer 
-                          content={JSON.stringify(progress.current_state, null, 2)} 
-                          title="projection-state"
+                    {/* Event Progress */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Event Progress</span>
+                        <span>{debugSession.currentEventIndex} / {debugSession.totalEventsLoaded}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-purple-500 h-2 rounded-full transition-all duration-300"
+                          style={{ 
+                            width: `${debugSession.totalEventsLoaded > 0 
+                              ? Math.round((debugSession.currentEventIndex / debugSession.totalEventsLoaded) * 100) 
+                              : 0}%` 
+                          }}
                         />
                       </div>
                     </div>
-                  )}
-                </>
-              )}
 
-              {!progress && (
-                <div className="text-center text-muted-foreground py-8">
-                  <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Click "Run Projection" to start processing events</p>
-                </div>
-              )}
-            </div>
+                    {/* Current Event */}
+                    {debugSession.currentEvent && (
+                      <div>
+                        <h4 className="font-medium mb-2">Current Event</h4>
+                        <div className="border rounded-lg p-3 space-y-2 text-sm">
+                          <div><strong>ID:</strong> <span className="font-mono text-xs">{debugSession.currentEvent.event_id}</span></div>
+                          <div><strong>Type:</strong> {debugSession.currentEvent.event_name}</div>
+                          <div><strong>Stream:</strong> {debugSession.currentEvent.stream_id}</div>
+                          <div><strong>Partition:</strong> {debugSession.currentEvent.partition_id}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* State Comparison */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <h4 className="font-medium mb-2">Previous State</h4>
+                        <div className="border rounded-lg p-2 max-h-60 overflow-auto bg-gray-50">
+                          <JsonViewer 
+                            content={JSON.stringify(debugSession.previousState, null, 2)} 
+                            title="previous-state"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-medium mb-2">Current State</h4>
+                        <div className="border rounded-lg p-2 max-h-60 overflow-auto">
+                          <JsonViewer 
+                            content={JSON.stringify(debugSession.currentState, null, 2)} 
+                            title="current-state"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Console Logs */}
+                    {debugSession.consoleLogs.length > 0 && (
+                      <div>
+                        <h4 className="font-medium mb-2">Console Output</h4>
+                        <div className="border rounded-lg p-2 max-h-40 overflow-auto bg-black text-green-400 font-mono text-xs">
+                          {debugSession.consoleLogs.map((log, index) => (
+                            <div key={index} className={`mb-1 ${log.level === 'error' ? 'text-red-400' : log.level === 'warn' ? 'text-yellow-400' : 'text-green-400'}`}>
+                              <span className="text-gray-400">[{new Date(log.timestamp).toLocaleTimeString()}]</span> {log.message}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center text-muted-foreground py-8">
+                    <Bug className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Click "Start Debug" to begin debugging your projection</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Normal Mode Interface
+              <div className="space-y-4">
+                {progress && (
+                  <>
+                    {/* Progress Bar */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Processing Partitions</span>
+                        <span>{progress.current_partition} / {progress.total_partitions}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${getProgressPercentage()}%` }}
+                        />
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {getProgressPercentage()}% complete • {progress.events_processed.toLocaleString()} events processed
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <div className="flex items-center gap-2 p-2 rounded bg-muted">
+                      {getStatusIcon()}
+                      <span className="text-sm font-medium">
+                        Status: {progress.status.charAt(0).toUpperCase() + progress.status.slice(1)}
+                      </span>
+                      {progress.error && (
+                        <span className="text-xs text-red-600 ml-2">
+                          {progress.error}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Current State */}
+                    {progress.current_state && (
+                      <div>
+                        <h4 className="font-medium mb-2">Current Projection State</h4>
+                        <div className="border rounded-lg p-2 max-h-[40rem] overflow-auto">
+                          <JsonViewer 
+                            content={JSON.stringify(progress.current_state, null, 2)} 
+                            title="projection-state"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {!progress && (
+                  <div className="text-center text-muted-foreground py-8">
+                    <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Click "Run Projection" to start processing events</p>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

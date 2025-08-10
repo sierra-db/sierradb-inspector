@@ -4,6 +4,10 @@ import {
   EventGetResponse,
   PingResponse,
   HelloResponse,
+  DebugSessionStartRequest,
+  DebugStepRequest,
+  DebugSessionStatus,
+  DebugStepResponse,
 } from '../types.js'
 
 const API_BASE = '/api'
@@ -78,6 +82,75 @@ export const api = {
     }
     
     return fetchApi(`/streams/${encodeURIComponent(streamId)}/scan?${params}`)
+  },
+
+  // Debug API methods
+  async debugSessionStart(request: DebugSessionStartRequest): Promise<{ sessionId: string }> {
+    const response = await fetch(`${API_BASE}/projections/debug/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, errorData.error || `HTTP ${response.status}`)
+    }
+    
+    return response.json()
+  },
+
+  async debugSessionStep(request: DebugStepRequest): Promise<DebugStepResponse> {
+    const response = await fetch(`${API_BASE}/projections/debug/step`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, errorData.error || `HTTP ${response.status}`)
+    }
+    
+    return response.json()
+  },
+
+  async debugSessionStatus(sessionId: string): Promise<DebugSessionStatus> {
+    return fetchApi(`/projections/debug/status/${encodeURIComponent(sessionId)}`)
+  },
+
+  async debugSessionReset(request: DebugStepRequest): Promise<DebugSessionStatus> {
+    const response = await fetch(`${API_BASE}/projections/debug/reset`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, errorData.error || `HTTP ${response.status}`)
+    }
+    
+    return response.json()
+  },
+
+  async debugSessionDestroy(sessionId: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE}/projections/debug/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, errorData.error || `HTTP ${response.status}`)
+    }
+    
+    return response.json()
   },
 }
 

@@ -7,8 +7,11 @@ import {
   StreamScanParams,
   EventGetParams,
   ProjectionRunRequestSchema,
+  DebugSessionStartRequestSchema,
+  DebugStepRequestSchema,
 } from './types.js'
 import { ProjectionEngine } from './projectionEngine.js'
+import { DebugSessionManager } from './debugSessionManager.js'
 
 const app = express()
 const port = process.env.PORT || 3001
@@ -19,6 +22,7 @@ app.use(express.json())
 
 const sierraDB = new SierraDBClient(sierraDBUrl)
 const projectionEngine = new ProjectionEngine(sierraDB)
+const debugSessionManager = new DebugSessionManager(sierraDB)
 
 const PartitionScanQuerySchema = z.object({
   partition: z.string().transform(val => {
@@ -172,7 +176,8 @@ app.post('/api/projections/run', async (req, res) => {
           if (progress.status === 'completed' || progress.status === 'error') {
             res.end()
           }
-        }
+        },
+        params.streamId
       )
     } catch (projectionError) {
       console.error('Projection execution error:', projectionError)
@@ -201,6 +206,89 @@ app.post('/api/projections/run', async (req, res) => {
     } else {
       res.status(500).json({ error: 'Failed to start projection' })
     }
+  }
+})
+
+// Debug API endpoints
+app.post('/api/projections/debug/start', async (req, res) => {
+  try {
+    const params = DebugSessionStartRequestSchema.parse(req.body)
+    const sessionId = await debugSessionManager.createSession(params.code, params.initialState, params.streamId)
+    
+    res.json({ sessionId })
+  } catch (error) {
+    console.error('Debug session start error:', error)
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid parameters', details: error.errors })
+    } else {
+      res.status(500).json({ error: 'Failed to start debug session' })
+    }
+  }
+})
+
+app.post('/api/projections/debug/step', async (req, res) => {
+  try {
+    const params = DebugStepRequestSchema.parse(req.body)
+    const result = await debugSessionManager.stepSession(params.sessionId)
+    
+    res.json(result)
+  } catch (error) {
+    console.error('Debug step error:', error)
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid parameters', details: error.errors })
+    } else {
+      res.status(500).json({ error: 'Failed to step debug session' })
+    }
+  }
+})
+
+app.get('/api/projections/debug/status/:sessionId', async (req, res) => {
+  try {
+    const sessionId = req.params.sessionId
+    const status = debugSessionManager.getSession(sessionId)
+    
+    if (!status) {
+      res.status(404).json({ error: 'Debug session not found' })
+      return
+    }
+    
+    res.json(status)
+  } catch (error) {
+    console.error('Debug status error:', error)
+    res.status(500).json({ error: 'Failed to get debug session status' })
+  }
+})
+
+app.post('/api/projections/debug/reset', async (req, res) => {
+  try {
+    const params = DebugStepRequestSchema.parse(req.body)
+    const status = await debugSessionManager.resetSession(params.sessionId)
+    
+    res.json(status)
+  } catch (error) {
+    console.error('Debug reset error:', error)
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid parameters', details: error.errors })
+    } else {
+      res.status(500).json({ error: 'Failed to reset debug session' })
+    }
+  }
+})
+
+app.delete('/api/projections/debug/:sessionId', async (req, res) => {
+  try {
+    const sessionId = req.params.sessionId
+    const destroyed = debugSessionManager.destroySession(sessionId)
+    
+    if (!destroyed) {
+      res.status(404).json({ error: 'Debug session not found' })
+      return
+    }
+    
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Debug destroy error:', error)
+    res.status(500).json({ error: 'Failed to destroy debug session' })
   }
 })
 

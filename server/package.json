@@ -8,11 +8,13 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@types/uuid": "^10.0.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "ioredis": "^5.3.2",
     "isolated-vm": "^6.0.1",
     "redis": "^5.7.0",
+    "uuid": "^11.1.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
