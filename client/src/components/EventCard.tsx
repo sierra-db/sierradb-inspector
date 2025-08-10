@@ -20,7 +20,7 @@ export function EventCard({ event }: EventCardProps) {
   const [expanded, setExpanded] = useState(false)
   
   const formatTimestamp = (timestamp: number) => {
-    return new Date(timestamp / 1000000).toLocaleString()
+    return new Date(timestamp).toLocaleString()
   }
 
   return (
@@ -86,14 +86,22 @@ export function EventCard({ event }: EventCardProps) {
             {event.metadata && (
               <div>
                 <h4 className="font-medium mb-2">Metadata</h4>
-                <JsonViewer content={event.metadata} title="metadata" />
+                <JsonViewer 
+                  content={event.metadata} 
+                  encoding={event.metadata_encoding}
+                  title="metadata" 
+                />
               </div>
             )}
             
             {event.payload && (
               <div>
                 <h4 className="font-medium mb-2">Payload</h4>
-                <JsonViewer content={event.payload} title="payload" />
+                <JsonViewer 
+                  content={event.payload} 
+                  encoding={event.payload_encoding}
+                  title="payload" 
+                />
               </div>
             )}
           </div>

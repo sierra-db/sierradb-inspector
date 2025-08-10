@@ -3,6 +3,7 @@ import {
   StreamScanResponse,
   EventGetResponse,
   PingResponse,
+  HelloResponse,
 } from '../types.js'
 
 const API_BASE = '/api'
@@ -28,6 +29,10 @@ async function fetchApi<T>(endpoint: string): Promise<T> {
 export const api = {
   async ping(): Promise<{ result: PingResponse }> {
     return fetchApi('/ping')
+  },
+
+  async hello(): Promise<HelloResponse> {
+    return fetchApi('/hello')
   },
 
   async getEvent(eventId: string): Promise<EventGetResponse> {

@@ -9,7 +9,9 @@ export interface SierraDBEvent {
   stream_id: string
   event_name: string
   metadata: string | null
+  metadata_encoding?: 'base64-cbor' | 'base64-binary' | null
   payload: string | null
+  payload_encoding?: 'base64-cbor' | 'base64-binary' | null
 }
 
 export interface PartitionScanResponse {
@@ -25,3 +27,10 @@ export interface StreamScanResponse {
 export type EventGetResponse = SierraDBEvent | null
 
 export type PingResponse = string
+
+export interface HelloResponse {
+  version: string
+  num_partitions: number
+  server: string
+  peer_id: string
+}

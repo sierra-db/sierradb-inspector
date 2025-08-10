@@ -5,6 +5,7 @@ import {
   StreamScanResponse,
   EventGetResponse,
   PingResponse,
+  HelloResponse,
   PartitionScanParams,
   StreamScanParams,
   EventGetParams,
@@ -13,117 +14,240 @@ import {
   StreamScanResponseSchema,
   EventGetResponseSchema,
   PingResponseSchema,
+  HelloResponseSchema,
 } from './types.js'
+import { processEventFields } from './binaryUtils.js'
 
 export class SierraDBClient {
   private client: any
+  private url: string
+  private isConnecting: boolean = false
 
   constructor(url: string = 'redis://localhost:9090') {
+    this.url = url
+    this.createClient()
+  }
+
+  private createClient(): void {
     this.client = createClient({
-      url,
+      url: this.url,
       RESP: 3, // Enable RESP3
+      socket: {
+        reconnectStrategy: (retries) => {
+          console.log(`Reconnection attempt ${retries + 1}`)
+          // Exponential backoff with max delay of 3000ms
+          return Math.min(retries * 50, 3000)
+        },
+        connectTimeout: 60000,
+      },
+    })
+
+    this.client.on('error', (err: Error) => {
+      console.error('Redis connection error:', err)
+    })
+
+    this.client.on('connect', () => {
+      console.log('Connected to SierraDB')
+      this.isConnecting = false
+    })
+
+    this.client.on('ready', () => {
+      console.log('SierraDB connection ready')
+    })
+
+    this.client.on('reconnecting', () => {
+      console.log('Reconnecting to SierraDB...')
+      this.isConnecting = true
+    })
+
+    this.client.on('end', () => {
+      console.log('SierraDB connection ended')
     })
   }
 
   async connect(): Promise<void> {
+    if (this.client.isOpen) {
+      return
+    }
+    this.isConnecting = true
     await this.client.connect()
+    this.isConnecting = false
   }
 
   async disconnect(): Promise<void> {
-    await this.client.disconnect()
+    if (this.client.isOpen) {
+      await this.client.disconnect()
+    }
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (!this.client.isOpen && !this.isConnecting) {
+      console.log('Connection lost, attempting to reconnect...')
+      try {
+        await this.connect()
+      } catch (error) {
+        console.error('Failed to reconnect:', error)
+        throw error
+      }
+    }
+  }
+
+  private async executeWithRetry<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      await this.ensureConnected()
+      return await operation()
+    } catch (error: any) {
+      if (error.message?.includes('connection') || error.code === 'ECONNREFUSED') {
+        console.log('Connection error detected, retrying...')
+        await this.ensureConnected()
+        return await operation()
+      }
+      throw error
+    }
   }
 
   async ping(): Promise<PingResponse> {
-    const result = await this.client.ping()
-    return PingResponseSchema.parse(result)
+    return await this.executeWithRetry(async () => {
+      const result = await this.client.ping()
+      return PingResponseSchema.parse(result)
+    })
+  }
+
+  async hello(): Promise<HelloResponse> {
+    return await this.executeWithRetry(async () => {
+      const result = await this.client.sendCommand(['HELLO', '3'])
+      const resultObj = result as Record<string, any>
+      
+      const hello = {
+        version: resultObj.version,
+        num_partitions: resultObj.num_partitions,
+        server: resultObj.server,
+        peer_id: resultObj.peer_id,
+      }
+      
+      return HelloResponseSchema.parse(hello)
+    })
   }
 
   async getEvent(params: EventGetParams): Promise<EventGetResponse> {
-    const result = await this.client.sendCommand(['EGET', params.event_id])
+    return await this.executeWithRetry(async () => {
+      const result = await this.client.sendCommand(['EGET', params.event_id])
 
-    if (result === null) {
-      return null
-    }
+      if (result === null) {
+        return null
+      }
 
-    const resultArray = result as string[]
-    const event = {
-      event_id: resultArray[0],
-      partition_key: resultArray[1],
-      partition_id: parseInt(resultArray[2]),
-      transaction_id: resultArray[3],
-      partition_sequence: parseInt(resultArray[4]),
-      stream_version: parseInt(resultArray[5]),
-      timestamp: parseInt(resultArray[6]),
-      stream_id: resultArray[7],
-      event_name: resultArray[8],
-      metadata: resultArray[9] || null,
-      payload: resultArray[10] || null,
-    }
+      const resultObj = result as Record<string, any>
+      
+      // Process binary fields (metadata and payload)
+      const processedFields = processEventFields(
+        resultObj.metadata || null,
+        resultObj.payload || null
+      )
+      
+      const event = {
+        event_id: resultObj.event_id,
+        partition_key: resultObj.partition_key,
+        partition_id: parseInt(resultObj.partition_id),
+        transaction_id: resultObj.transaction_id,
+        partition_sequence: parseInt(resultObj.partition_sequence),
+        stream_version: parseInt(resultObj.stream_version),
+        timestamp: parseInt(resultObj.timestamp),
+        stream_id: resultObj.stream_id,
+        event_name: resultObj.event_name,
+        metadata: processedFields.metadata,
+        metadata_encoding: processedFields.metadata_encoding,
+        payload: processedFields.payload,
+        payload_encoding: processedFields.payload_encoding,
+      }
 
-    return EventGetResponseSchema.parse(event)
+      return EventGetResponseSchema.parse(event)
+    })
   }
 
   async scanPartition(params: PartitionScanParams): Promise<PartitionScanResponse> {
-    const args = ['EPSCAN', params.partition.toString(), params.start_sequence.toString(), params.end_sequence.toString()]
+    return await this.executeWithRetry(async () => {
+      const args = ['EPSCAN', params.partition.toString(), params.start_sequence.toString(), params.end_sequence.toString()]
 
-    if (params.count !== undefined) {
-      args.push('COUNT', params.count.toString())
-    }
+      if (params.count !== undefined) {
+        args.push('COUNT', params.count.toString())
+      }
 
-    const result = await this.client.sendCommand(args)
-    const resultArray = result as [boolean, any[][]]
+      const result = await this.client.sendCommand(args)
+      const resultObj = result as Record<string, any>
 
-    const response = {
-      has_more: resultArray[0],
-      events: resultArray[1].map((eventArray: any[]) => ({
-        event_id: eventArray[0],
-        partition_key: eventArray[1],
-        partition_id: parseInt(eventArray[2]),
-        transaction_id: eventArray[3],
-        partition_sequence: parseInt(eventArray[4]),
-        stream_version: parseInt(eventArray[5]),
-        timestamp: parseInt(eventArray[6]),
-        stream_id: eventArray[7],
-        event_name: eventArray[8],
-        metadata: eventArray[9] === null ? null : eventArray[9],
-        payload: eventArray[10] === null ? null : eventArray[10],
-      }))
-    }
+      const response = {
+        has_more: resultObj.has_more,
+        events: resultObj.events.map((eventObj: Record<string, any>) => {
+          const processedFields = processEventFields(
+            eventObj.metadata || null,
+            eventObj.payload || null
+          )
+          
+          return {
+            event_id: eventObj.event_id,
+            partition_key: eventObj.partition_key,
+            partition_id: parseInt(eventObj.partition_id),
+            transaction_id: eventObj.transaction_id,
+            partition_sequence: parseInt(eventObj.partition_sequence),
+            stream_version: parseInt(eventObj.stream_version),
+            timestamp: parseInt(eventObj.timestamp),
+            stream_id: eventObj.stream_id,
+            event_name: eventObj.event_name,
+            metadata: processedFields.metadata,
+            metadata_encoding: processedFields.metadata_encoding,
+            payload: processedFields.payload,
+            payload_encoding: processedFields.payload_encoding,
+          }
+        })
+      }
 
-    return PartitionScanResponseSchema.parse(response)
+      return PartitionScanResponseSchema.parse(response)
+    })
   }
 
   async scanStream(params: StreamScanParams): Promise<StreamScanResponse> {
-    const args = ['ESCAN', params.stream_id, params.start_version.toString(), params.end_version.toString()]
+    return await this.executeWithRetry(async () => {
+      const args = ['ESCAN', params.stream_id, params.start_version.toString(), params.end_version.toString()]
 
-    if (params.partition_key !== undefined) {
-      args.push('PARTITION_KEY', params.partition_key)
-    }
+      if (params.partition_key !== undefined) {
+        args.push('PARTITION_KEY', params.partition_key)
+      }
 
-    if (params.count !== undefined) {
-      args.push('COUNT', params.count.toString())
-    }
+      if (params.count !== undefined) {
+        args.push('COUNT', params.count.toString())
+      }
 
-    const result = await this.client.sendCommand(args)
-    const resultArray = result as [boolean, any[][]]
+      const result = await this.client.sendCommand(args)
+      const resultObj = result as Record<string, any>
 
-    const response = {
-      has_more: resultArray[0],
-      events: resultArray[1].map((eventArray: any[]) => ({
-        event_id: eventArray[0],
-        partition_key: eventArray[1],
-        partition_id: parseInt(eventArray[2]),
-        transaction_id: eventArray[3],
-        partition_sequence: parseInt(eventArray[4]),
-        stream_version: parseInt(eventArray[5]),
-        timestamp: parseInt(eventArray[6]),
-        stream_id: eventArray[7],
-        event_name: eventArray[8],
-        metadata: eventArray[9] === null ? null : eventArray[9],
-        payload: eventArray[10] === null ? null : eventArray[10],
-      }))
-    }
+      const response = {
+        has_more: resultObj.has_more,
+        events: resultObj.events.map((eventObj: Record<string, any>) => {
+          const processedFields = processEventFields(
+            eventObj.metadata || null,
+            eventObj.payload || null
+          )
+          
+          return {
+            event_id: eventObj.event_id,
+            partition_key: eventObj.partition_key,
+            partition_id: parseInt(eventObj.partition_id),
+            transaction_id: eventObj.transaction_id,
+            partition_sequence: parseInt(eventObj.partition_sequence),
+            stream_version: parseInt(eventObj.stream_version),
+            timestamp: parseInt(eventObj.timestamp),
+            stream_id: eventObj.stream_id,
+            event_name: eventObj.event_name,
+            metadata: processedFields.metadata,
+            metadata_encoding: processedFields.metadata_encoding,
+            payload: processedFields.payload,
+            payload_encoding: processedFields.payload_encoding,
+          }
+        })
+      }
 
-    return StreamScanResponseSchema.parse(response)
+      return StreamScanResponseSchema.parse(response)
+    })
   }
 }

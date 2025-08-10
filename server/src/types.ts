@@ -11,7 +11,9 @@ export const SierraDBEventSchema = z.object({
   stream_id: z.string(),
   event_name: z.string(),
   metadata: z.string().nullable(),
+  metadata_encoding: z.enum(['base64-cbor', 'base64-binary']).nullable().optional(),
   payload: z.string().nullable(),
+  payload_encoding: z.enum(['base64-cbor', 'base64-binary']).nullable().optional(),
 })
 
 export const PartitionScanResponseSchema = z.object({
@@ -28,11 +30,19 @@ export const EventGetResponseSchema = SierraDBEventSchema.nullable()
 
 export const PingResponseSchema = z.string()
 
+export const HelloResponseSchema = z.object({
+  version: z.string(),
+  num_partitions: z.number(),
+  server: z.string(),
+  peer_id: z.string(),
+})
+
 export type SierraDBEvent = z.infer<typeof SierraDBEventSchema>
 export type PartitionScanResponse = z.infer<typeof PartitionScanResponseSchema>
 export type StreamScanResponse = z.infer<typeof StreamScanResponseSchema>
 export type EventGetResponse = z.infer<typeof EventGetResponseSchema>
 export type PingResponse = z.infer<typeof PingResponseSchema>
+export type HelloResponse = z.infer<typeof HelloResponseSchema>
 
 export interface PartitionScanParams {
   partition: number | string

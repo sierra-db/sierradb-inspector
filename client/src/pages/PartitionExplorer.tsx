@@ -42,7 +42,15 @@ export function PartitionExplorer() {
     }
   }
 
-  const getRandomPartition = () => Math.floor(Math.random() * 1024).toString()
+  // Get server info to determine the number of partitions
+  const { data: serverInfo } = useQuery({
+    queryKey: ['server-info'],
+    queryFn: () => api.hello(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  })
+  
+  const numPartitions = serverInfo?.num_partitions || 1024
+  const getRandomPartition = () => Math.floor(Math.random() * numPartitions).toString()
   
   const handlePartitionSelect = (partitionId: string) => {
     setPartition(partitionId)
@@ -92,7 +100,7 @@ export function PartitionExplorer() {
         <CardHeader>
           <CardTitle>Partition Selection</CardTitle>
           <CardDescription>
-            SierraDB has 1,024 partitions (0-1023). Enter a partition ID or UUID, or try these quick options:
+            SierraDB has {numPartitions.toLocaleString()} partitions (0-{numPartitions - 1}). Enter a partition ID or UUID, or try these quick options:
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -109,16 +117,16 @@ export function PartitionExplorer() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handlePartitionSelect('511')}
+                onClick={() => handlePartitionSelect(Math.floor((numPartitions - 1) / 2).toString())}
               >
-                Middle (511)
+                Middle ({Math.floor((numPartitions - 1) / 2)})
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handlePartitionSelect('1023')}
+                onClick={() => handlePartitionSelect((numPartitions - 1).toString())}
               >
-                Last (1023)
+                Last ({numPartitions - 1})
               </Button>
               <Button
                 variant="outline"
@@ -132,7 +140,7 @@ export function PartitionExplorer() {
             {/* Main partition input */}
             <div className="flex gap-2">
               <Input
-                placeholder="Partition ID (0-1023) or UUID"
+                placeholder={`Partition ID (0-${numPartitions - 1}) or UUID`}
                 value={partition}
                 onChange={(e) => setPartition(e.target.value)}
                 className="flex-1"

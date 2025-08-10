@@ -15,9 +15,9 @@ web client.
 ## SierraDB Overview
 
 SierraDB is a distributed event sourcing database built in Rust with libp2p for distributed communication, inspired by
-Cassandra/ScyllaDB's architecture. The system organizes data around 1,024 logical partitions (fixed number for
-deterministic hashing) that serve as concurrency control boundaries, with each partition owned by multiple nodes
-according to a replication factor (typically 3). Streams are append-only sequences of immutable events identified by
+Cassandra/ScyllaDB's architecture. The system organizes data around a configurable number of logical partitions 
+(default 1,024, but can be customized) that serve as concurrency control boundaries, with each partition owned by 
+multiple nodes according to a replication factor (typically 3). Streams are append-only sequences of immutable events identified by
 UUIDs, where each stream belongs to exactly one partition determined by hashing its partition key. Events within
 streams maintain stream versions - monotonic, gapless sequence numbers that ensure total ordering within each stream,
 while partition sequences provide gapless monotonic counters across all streams within a partition, enabling

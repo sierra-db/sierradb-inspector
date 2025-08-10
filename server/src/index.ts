@@ -73,6 +73,16 @@ app.get('/api/ping', async (req, res) => {
   }
 })
 
+app.get('/api/hello', async (req, res) => {
+  try {
+    const result = await sierraDB.hello()
+    res.json(result)
+  } catch (error) {
+    console.error('Hello error:', error)
+    res.status(500).json({ error: 'Failed to get server info' })
+  }
+})
+
 app.get('/api/events/:event_id', async (req, res) => {
   try {
     const params = EventGetParamsSchema.parse(req.params)
