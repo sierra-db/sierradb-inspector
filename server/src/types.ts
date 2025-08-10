@@ -62,3 +62,20 @@ export interface StreamScanParams {
 export interface EventGetParams {
   event_id: string
 }
+
+export const ProjectionRunRequestSchema = z.object({
+  code: z.string().min(1, 'Projection code is required'),
+  initialState: z.any().optional(),
+})
+
+export const ProjectionProgressSchema = z.object({
+  current_partition: z.number(),
+  total_partitions: z.number(),
+  events_processed: z.number(),
+  current_state: z.any(),
+  status: z.enum(['running', 'completed', 'error']),
+  error: z.string().optional(),
+})
+
+export type ProjectionRunRequest = z.infer<typeof ProjectionRunRequestSchema>
+export type ProjectionProgress = z.infer<typeof ProjectionProgressSchema>

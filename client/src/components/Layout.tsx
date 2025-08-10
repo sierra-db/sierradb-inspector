@@ -5,7 +5,8 @@ import {
   Database, 
   HardDrive, 
   Search, 
-  FileText 
+  FileText,
+  Calculator
 } from 'lucide-react'
 
 interface LayoutProps {
@@ -17,6 +18,7 @@ const navigation = [
   { name: 'Partitions', href: '/partitions', icon: HardDrive },
   { name: 'Streams', href: '/streams', icon: FileText },
   { name: 'Event Lookup', href: '/events', icon: Search },
+  { name: 'Projections', href: '/projections', icon: Calculator },
 ]
 
 export function Layout({ children }: LayoutProps) {

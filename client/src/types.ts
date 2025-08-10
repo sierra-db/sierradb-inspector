@@ -34,3 +34,17 @@ export interface HelloResponse {
   server: string
   peer_id: string
 }
+
+export interface ProjectionRunRequest {
+  code: string
+  initialState?: any
+}
+
+export interface ProjectionProgress {
+  current_partition: number
+  total_partitions: number
+  events_processed: number
+  current_state: any
+  status: 'running' | 'completed' | 'error'
+  error?: string
+}

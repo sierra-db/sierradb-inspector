@@ -6,7 +6,9 @@ import {
   PartitionScanParams,
   StreamScanParams,
   EventGetParams,
+  ProjectionRunRequestSchema,
 } from './types.js'
+import { ProjectionEngine } from './projectionEngine.js'
 
 const app = express()
 const port = process.env.PORT || 3001
@@ -16,6 +18,7 @@ app.use(cors())
 app.use(express.json())
 
 const sierraDB = new SierraDBClient(sierraDBUrl)
+const projectionEngine = new ProjectionEngine(sierraDB)
 
 const PartitionScanQuerySchema = z.object({
   partition: z.string().transform(val => {
@@ -131,6 +134,72 @@ app.get('/api/streams/:stream_id/scan', async (req, res) => {
       res.status(400).json({ error: 'Invalid parameters', details: error.errors })
     } else {
       res.status(500).json({ error: 'Failed to scan stream' })
+    }
+  }
+})
+
+app.post('/api/projections/run', async (req, res) => {
+  try {
+    const params = ProjectionRunRequestSchema.parse(req.body)
+    
+    // Set up Server-Sent Events headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control',
+      'X-Accel-Buffering': 'no', // Disable nginx buffering
+    })
+
+    // Send initial connection event
+    res.write('event: connected\n')
+    res.write('data: {"status": "connected"}\n\n')
+    
+    // Flush the response to ensure it's sent immediately
+    res.flushHeaders()
+
+    // Run the projection (await it properly)
+    try {
+      await projectionEngine.runProjection(
+        params.code,
+        params.initialState || null,
+        (progress) => {
+          res.write('event: progress\n')
+          res.write(`data: ${JSON.stringify(progress)}\n\n`)
+          
+          // Close connection when completed or error
+          if (progress.status === 'completed' || progress.status === 'error') {
+            res.end()
+          }
+        }
+      )
+    } catch (projectionError) {
+      console.error('Projection execution error:', projectionError)
+      res.write('event: progress\n')
+      res.write(`data: ${JSON.stringify({
+        current_partition: 0,
+        total_partitions: 0,
+        events_processed: 0,
+        current_state: null,
+        status: 'error',
+        error: projectionError instanceof Error ? projectionError.message : 'Unknown projection error'
+      })}\n\n`)
+      res.end()
+    }
+
+    // Handle client disconnect
+    req.on('close', () => {
+      projectionEngine.abort()
+      res.end()
+    })
+
+  } catch (error) {
+    console.error('Projection run error:', error)
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid parameters', details: error.errors })
+    } else {
+      res.status(500).json({ error: 'Failed to start projection' })
     }
   }
 })
