@@ -294,14 +294,18 @@ app.delete('/api/projections/debug/:sessionId', async (req, res) => {
 
 async function startServer() {
   try {
+    console.log(`Starting server on port ${port}`)
+    console.log(`Attempting to connect to SierraDB at: ${sierraDBUrl}`)
+    
     await sierraDB.connect()
-    console.log('Connected to SierraDB')
+    console.log('Successfully connected to SierraDB')
 
     app.listen(port, () => {
       console.log(`SierraDB Inspector server running on port ${port}`)
     })
   } catch (error) {
     console.error('Failed to start server:', error)
+    console.error('Error details:', error)
     process.exit(1)
   }
 }

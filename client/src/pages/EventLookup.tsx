@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useURLState } from '@/hooks/useURLState'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,9 +17,12 @@ import {
 
 export function EventLookup() {
   const { eventId: urlEventId } = useParams()
-  const navigate = useNavigate()
   
-  const [eventId, setEventId] = useState(urlEventId || '')
+  const [state, updateState] = useURLState({
+    eventId: urlEventId || ''
+  })
+  
+  const { eventId } = state
   const [copied, setCopied] = useState(false)
   
   const isValidUUID = (uuid: string) => {
@@ -36,7 +40,6 @@ export function EventLookup() {
 
   const handleSearch = () => {
     if (eventId && isValidUUID(eventId)) {
-      navigate(`/events/${encodeURIComponent(eventId)}`)
       refetch()
     }
   }
@@ -82,7 +85,7 @@ export function EventLookup() {
                 <Input
                   placeholder="Event ID (UUID, e.g., 550e8400-e29b-41d4-a716-446655440000)"
                   value={eventId}
-                  onChange={(e) => setEventId(e.target.value)}
+                  onChange={(e) => updateState({ eventId: e.target.value })}
                   onKeyPress={handleKeyPress}
                   className={`flex-1 font-mono ${hasValidationError ? 'border-red-500 focus:ring-red-500' : ''}`}
                 />
@@ -180,7 +183,7 @@ export function EventLookup() {
                   variant="outline" 
                   asChild
                 >
-                  <a href={`/streams/${encodeURIComponent(event.stream_id)}`}>
+                  <a href={`/streams/${encodeURIComponent(event.stream_id)}?partitionKey=${encodeURIComponent(event.partition_key)}`}>
                     View Stream "{event.stream_id}"
                   </a>
                 </Button>

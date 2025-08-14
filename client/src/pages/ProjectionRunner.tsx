@@ -255,74 +255,77 @@ export function ProjectionRunner() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Calculator className="h-8 w-8" />
-            Projection Runner
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Write and run custom projections across all events or specific streams in SierraDB
-          </p>
-        </div>
-        
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <Bug className="h-4 w-4" />
-            <label className="text-sm font-medium">Debug Mode</label>
-            <input
-              type="checkbox"
-              checked={debugMode}
-              onChange={(e) => {
-                setDebugMode(e.target.checked)
-                // Clean up any active sessions when switching modes
-                if (!e.target.checked) {
-                  stopDebugSession()
-                }
-                if (e.target.checked) {
-                  stopProjection()
-                }
-              }}
-              className="w-4 h-4"
-            />
+    <div className="h-screen flex flex-col overflow-hidden">
+      <div className="p-6 pb-0 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <Calculator className="h-8 w-8" />
+              Projection Runner
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              Write and run custom projections across all events or specific streams in SierraDB
+            </p>
           </div>
           
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium">Stream Mode</label>
-            <input
-              type="checkbox"
-              checked={streamMode}
-              onChange={(e) => setStreamMode(e.target.checked)}
-              className="w-4 h-4"
-            />
-            {streamMode && (
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Bug className="h-4 w-4" />
+              <label className="text-sm font-medium">Debug Mode</label>
               <input
-                type="text"
-                placeholder="Enter stream ID"
-                value={streamId}
-                onChange={(e) => setStreamId(e.target.value)}
-                className="ml-2 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="checkbox"
+                checked={debugMode}
+                onChange={(e) => {
+                  setDebugMode(e.target.checked)
+                  // Clean up any active sessions when switching modes
+                  if (!e.target.checked) {
+                    stopDebugSession()
+                  }
+                  if (e.target.checked) {
+                    stopProjection()
+                  }
+                }}
+                className="w-4 h-4"
               />
-            )}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">Stream Mode</label>
+              <input
+                type="checkbox"
+                checked={streamMode}
+                onChange={(e) => setStreamMode(e.target.checked)}
+                className="w-4 h-4"
+              />
+              {streamMode && (
+                <input
+                  type="text"
+                  placeholder="Enter stream ID"
+                  value={streamId}
+                  onChange={(e) => setStreamId(e.target.value)}
+                  className="ml-2 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Code Editor */}
-        <Card className="lg:col-span-1">
+      
+      <div className="flex-1 min-h-0 p-6 pt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+          {/* Code Editor */}
+          <Card className="lg:col-span-1 flex flex-col h-full">
           <CardHeader>
             <CardTitle>Projection Code</CardTitle>
             <CardDescription>
               Write a JavaScript function that processes each event and maintains projection state
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="border rounded-lg overflow-hidden">
+          <CardContent className="flex-1 flex flex-col">
+            <div className="space-y-4 flex-1 flex flex-col">
+              <div className="border rounded-lg overflow-hidden flex-1">
                 <Editor
-                  height="800px"
+                  height="100%"
                   defaultLanguage="javascript"
                   value={code}
                   onChange={(value) => setCode(value || '')}
@@ -426,8 +429,8 @@ export function ProjectionRunner() {
           </CardContent>
         </Card>
 
-        {/* Progress and Results / Debug Interface */}
-        <Card className="lg:col-span-1">
+          {/* Progress and Results / Debug Interface */}
+          <Card className="lg:col-span-1 flex flex-col h-full">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               {debugMode ? 'Debug Interface' : 'Progress & Results'}
@@ -443,7 +446,7 @@ export function ProjectionRunner() {
               }
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 overflow-auto">
             {debugMode ? (
               // Debug Mode Interface
               <div className="space-y-4">
@@ -595,45 +598,9 @@ export function ProjectionRunner() {
               </div>
             )}
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
-
-      {/* Documentation */}
-      <Card>
-        <CardHeader>
-          <CardTitle>How to Write Projections</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4 text-sm">
-            <div>
-              <h4 className="font-medium mb-2">Function Signature:</h4>
-              <code className="bg-muted px-2 py-1 rounded">function project(state, event)</code>
-            </div>
-            
-            <div>
-              <h4 className="font-medium mb-2">Parameters:</h4>
-              <ul className="list-disc pl-6 space-y-1">
-                <li><strong>state</strong>: Current projection state (null on first event)</li>
-                <li><strong>event</strong>: Current SierraDB event being processed</li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="font-medium mb-2">Return Value:</h4>
-              <p>Return the updated projection state. This will be passed as <code>state</code> to the next event.</p>
-            </div>
-            
-            <div>
-              <h4 className="font-medium mb-2">Event Object Properties:</h4>
-              <ul className="list-disc pl-6 space-y-1">
-                <li><code>event_id</code>, <code>event_name</code>, <code>stream_id</code></li>
-                <li><code>partition_id</code>, <code>partition_sequence</code>, <code>stream_version</code></li>
-                <li><code>timestamp</code>, <code>payload</code>, <code>metadata</code></li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

@@ -10,10 +10,12 @@ export const SierraDBEventSchema = z.object({
   timestamp: z.number(),
   stream_id: z.string(),
   event_name: z.string(),
-  metadata: z.string().nullable(),
-  metadata_encoding: z.enum(['base64-cbor', 'base64-binary']).nullable().optional(),
-  payload: z.string().nullable(),
-  payload_encoding: z.enum(['base64-cbor', 'base64-binary']).nullable().optional(),
+  metadata: z.any().nullable(),
+  metadata_encoding: z.enum(['base64-cbor', 'base64-binary', 'json']).nullable().optional(),
+  metadata_parsed: z.any().nullable().optional(),
+  payload: z.any().nullable(),
+  payload_encoding: z.enum(['base64-cbor', 'base64-binary', 'json']).nullable().optional(),
+  payload_parsed: z.any().nullable().optional(),
 })
 
 export const PartitionScanResponseSchema = z.object({

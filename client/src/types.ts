@@ -9,9 +9,11 @@ export interface SierraDBEvent {
   stream_id: string
   event_name: string
   metadata: string | null
-  metadata_encoding?: 'base64-cbor' | 'base64-binary' | null
+  metadata_encoding?: 'base64-cbor' | 'base64-binary' | 'json' | null
+  metadata_parsed?: any
   payload: string | null
-  payload_encoding?: 'base64-cbor' | 'base64-binary' | null
+  payload_encoding?: 'base64-cbor' | 'base64-binary' | 'json' | null
+  payload_parsed?: any
 }
 
 export interface PartitionScanResponse {

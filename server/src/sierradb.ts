@@ -1,4 +1,4 @@
-import { createClient } from 'redis'
+import { createClient, RESP_TYPES } from 'redis'
 import {
   SierraDBEvent,
   PartitionScanResponse,
@@ -41,6 +41,10 @@ export class SierraDBClient {
         connectTimeout: 60000,
       },
     })
+    .withTypeMapping({
+      [RESP_TYPES.BLOB_STRING]: Buffer
+    });   
+
 
     this.client.on('error', (err: Error) => {
       console.error('Redis connection error:', err)
@@ -71,6 +75,7 @@ export class SierraDBClient {
     }
     this.isConnecting = true
     await this.client.connect()
+    
     this.isConnecting = false
   }
 
@@ -115,14 +120,18 @@ export class SierraDBClient {
 
   async hello(): Promise<HelloResponse> {
     return await this.executeWithRetry(async () => {
-      const result = await this.client.sendCommand(['HELLO', '3'])
+      const result = await this.client.sendCommand(['HELLO', '3'], {
+        typeMapping: {
+          [RESP_TYPES.BLOB_STRING]: Buffer,
+        }
+      })
       const resultObj = result as Record<string, any>
       
       const hello = {
-        version: resultObj.version,
+        version: Buffer.isBuffer(resultObj.version) ? resultObj.version.toString() : resultObj.version,
         num_partitions: resultObj.num_partitions,
-        server: resultObj.server,
-        peer_id: resultObj.peer_id,
+        server: Buffer.isBuffer(resultObj.server) ? resultObj.server.toString() : resultObj.server,
+        peer_id: Buffer.isBuffer(resultObj.peer_id) ? resultObj.peer_id.toString() : resultObj.peer_id,
       }
       
       return HelloResponseSchema.parse(hello)
@@ -131,7 +140,11 @@ export class SierraDBClient {
 
   async getEvent(params: EventGetParams): Promise<EventGetResponse> {
     return await this.executeWithRetry(async () => {
-      const result = await this.client.sendCommand(['EGET', params.event_id])
+      const result = await this.client.sendCommand(['EGET', params.event_id], {
+        typeMapping: {
+          [RESP_TYPES.BLOB_STRING]: Buffer,
+        }
+      })
 
       if (result === null) {
         return null
@@ -146,19 +159,21 @@ export class SierraDBClient {
       )
       
       const event = {
-        event_id: resultObj.event_id,
-        partition_key: resultObj.partition_key,
+        event_id: Buffer.isBuffer(resultObj.event_id) ? resultObj.event_id.toString() : resultObj.event_id,
+        partition_key: Buffer.isBuffer(resultObj.partition_key) ? resultObj.partition_key.toString() : resultObj.partition_key,
         partition_id: parseInt(resultObj.partition_id),
-        transaction_id: resultObj.transaction_id,
+        transaction_id: Buffer.isBuffer(resultObj.transaction_id) ? resultObj.transaction_id.toString() : resultObj.transaction_id,
         partition_sequence: parseInt(resultObj.partition_sequence),
         stream_version: parseInt(resultObj.stream_version),
         timestamp: parseInt(resultObj.timestamp),
-        stream_id: resultObj.stream_id,
-        event_name: resultObj.event_name,
+        stream_id: Buffer.isBuffer(resultObj.stream_id) ? resultObj.stream_id.toString() : resultObj.stream_id,
+        event_name: Buffer.isBuffer(resultObj.event_name) ? resultObj.event_name.toString() : resultObj.event_name,
         metadata: processedFields.metadata,
         metadata_encoding: processedFields.metadata_encoding,
+        metadata_parsed: processedFields.metadata_parsed,
         payload: processedFields.payload,
         payload_encoding: processedFields.payload_encoding,
+        payload_parsed: processedFields.payload_parsed,
       }
 
       return EventGetResponseSchema.parse(event)
@@ -173,7 +188,11 @@ export class SierraDBClient {
         args.push('COUNT', params.count.toString())
       }
 
-      const result = await this.client.sendCommand(args)
+      const result = await this.client.sendCommand(args, {
+        typeMapping: {
+          [RESP_TYPES.BLOB_STRING]: Buffer,
+        }
+      })
       const resultObj = result as Record<string, any>
 
       const response = {
@@ -185,19 +204,21 @@ export class SierraDBClient {
           )
           
           return {
-            event_id: eventObj.event_id,
-            partition_key: eventObj.partition_key,
+            event_id: Buffer.isBuffer(eventObj.event_id) ? eventObj.event_id.toString() : eventObj.event_id,
+            partition_key: Buffer.isBuffer(eventObj.partition_key) ? eventObj.partition_key.toString() : eventObj.partition_key,
             partition_id: parseInt(eventObj.partition_id),
-            transaction_id: eventObj.transaction_id,
+            transaction_id: Buffer.isBuffer(eventObj.transaction_id) ? eventObj.transaction_id.toString() : eventObj.transaction_id,
             partition_sequence: parseInt(eventObj.partition_sequence),
             stream_version: parseInt(eventObj.stream_version),
             timestamp: parseInt(eventObj.timestamp),
-            stream_id: eventObj.stream_id,
-            event_name: eventObj.event_name,
+            stream_id: Buffer.isBuffer(eventObj.stream_id) ? eventObj.stream_id.toString() : eventObj.stream_id,
+            event_name: Buffer.isBuffer(eventObj.event_name) ? eventObj.event_name.toString() : eventObj.event_name,
             metadata: processedFields.metadata,
             metadata_encoding: processedFields.metadata_encoding,
+            metadata_parsed: processedFields.metadata_parsed,
             payload: processedFields.payload,
             payload_encoding: processedFields.payload_encoding,
+            payload_parsed: processedFields.payload_parsed,
           }
         })
       }
@@ -218,7 +239,12 @@ export class SierraDBClient {
         args.push('COUNT', params.count.toString())
       }
 
-      const result = await this.client.sendCommand(args)
+      const result = await this.client.sendCommand(args, {
+        typeMapping: {
+          [RESP_TYPES.BLOB_STRING]: Buffer,
+        }
+      })
+      
       const resultObj = result as Record<string, any>
 
       const response = {
@@ -230,19 +256,21 @@ export class SierraDBClient {
           )
           
           return {
-            event_id: eventObj.event_id,
-            partition_key: eventObj.partition_key,
+            event_id: Buffer.isBuffer(eventObj.event_id) ? eventObj.event_id.toString() : eventObj.event_id,
+            partition_key: Buffer.isBuffer(eventObj.partition_key) ? eventObj.partition_key.toString() : eventObj.partition_key,
             partition_id: parseInt(eventObj.partition_id),
-            transaction_id: eventObj.transaction_id,
+            transaction_id: Buffer.isBuffer(eventObj.transaction_id) ? eventObj.transaction_id.toString() : eventObj.transaction_id,
             partition_sequence: parseInt(eventObj.partition_sequence),
             stream_version: parseInt(eventObj.stream_version),
             timestamp: parseInt(eventObj.timestamp),
-            stream_id: eventObj.stream_id,
-            event_name: eventObj.event_name,
+            stream_id: Buffer.isBuffer(eventObj.stream_id) ? eventObj.stream_id.toString() : eventObj.stream_id,
+            event_name: Buffer.isBuffer(eventObj.event_name) ? eventObj.event_name.toString() : eventObj.event_name,
             metadata: processedFields.metadata,
             metadata_encoding: processedFields.metadata_encoding,
+            metadata_parsed: processedFields.metadata_parsed,
             payload: processedFields.payload,
             payload_encoding: processedFields.payload_encoding,
+            payload_parsed: processedFields.payload_parsed,
           }
         })
       }

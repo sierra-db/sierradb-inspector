@@ -1,218 +1,26 @@
 import { z } from 'zod';
-export declare const SierraDBEventSchema: z.ZodObject<{
-    event_id: z.ZodString;
-    partition_key: z.ZodString;
-    partition_id: z.ZodNumber;
-    transaction_id: z.ZodString;
-    partition_sequence: z.ZodNumber;
-    stream_version: z.ZodNumber;
-    timestamp: z.ZodNumber;
-    stream_id: z.ZodString;
-    event_name: z.ZodString;
-    metadata: z.ZodNullable<z.ZodString>;
-    payload: z.ZodNullable<z.ZodString>;
-}, "strip", z.ZodTypeAny, {
-    event_id: string;
-    partition_key: string;
-    partition_id: number;
-    transaction_id: string;
-    partition_sequence: number;
-    stream_version: number;
-    timestamp: number;
-    stream_id: string;
-    event_name: string;
-    metadata: string | null;
-    payload: string | null;
-}, {
-    event_id: string;
-    partition_key: string;
-    partition_id: number;
-    transaction_id: string;
-    partition_sequence: number;
-    stream_version: number;
-    timestamp: number;
-    stream_id: string;
-    event_name: string;
-    metadata: string | null;
-    payload: string | null;
-}>;
-export declare const PartitionScanResponseSchema: z.ZodObject<{
-    has_more: z.ZodBoolean;
-    events: z.ZodArray<z.ZodObject<{
-        event_id: z.ZodString;
-        partition_key: z.ZodString;
-        partition_id: z.ZodNumber;
-        transaction_id: z.ZodString;
-        partition_sequence: z.ZodNumber;
-        stream_version: z.ZodNumber;
-        timestamp: z.ZodNumber;
-        stream_id: z.ZodString;
-        event_name: z.ZodString;
-        metadata: z.ZodNullable<z.ZodString>;
-        payload: z.ZodNullable<z.ZodString>;
-    }, "strip", z.ZodTypeAny, {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }, {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }>, "many">;
-}, "strip", z.ZodTypeAny, {
-    has_more: boolean;
-    events: {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }[];
-}, {
-    has_more: boolean;
-    events: {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }[];
-}>;
-export declare const StreamScanResponseSchema: z.ZodObject<{
-    has_more: z.ZodBoolean;
-    events: z.ZodArray<z.ZodObject<{
-        event_id: z.ZodString;
-        partition_key: z.ZodString;
-        partition_id: z.ZodNumber;
-        transaction_id: z.ZodString;
-        partition_sequence: z.ZodNumber;
-        stream_version: z.ZodNumber;
-        timestamp: z.ZodNumber;
-        stream_id: z.ZodString;
-        event_name: z.ZodString;
-        metadata: z.ZodNullable<z.ZodString>;
-        payload: z.ZodNullable<z.ZodString>;
-    }, "strip", z.ZodTypeAny, {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }, {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }>, "many">;
-}, "strip", z.ZodTypeAny, {
-    has_more: boolean;
-    events: {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }[];
-}, {
-    has_more: boolean;
-    events: {
-        event_id: string;
-        partition_key: string;
-        partition_id: number;
-        transaction_id: string;
-        partition_sequence: number;
-        stream_version: number;
-        timestamp: number;
-        stream_id: string;
-        event_name: string;
-        metadata: string | null;
-        payload: string | null;
-    }[];
-}>;
-export declare const EventGetResponseSchema: z.ZodNullable<z.ZodObject<{
-    event_id: z.ZodString;
-    partition_key: z.ZodString;
-    partition_id: z.ZodNumber;
-    transaction_id: z.ZodString;
-    partition_sequence: z.ZodNumber;
-    stream_version: z.ZodNumber;
-    timestamp: z.ZodNumber;
-    stream_id: z.ZodString;
-    event_name: z.ZodString;
-    metadata: z.ZodNullable<z.ZodString>;
-    payload: z.ZodNullable<z.ZodString>;
-}, "strip", z.ZodTypeAny, {
-    event_id: string;
-    partition_key: string;
-    partition_id: number;
-    transaction_id: string;
-    partition_sequence: number;
-    stream_version: number;
-    timestamp: number;
-    stream_id: string;
-    event_name: string;
-    metadata: string | null;
-    payload: string | null;
-}, {
-    event_id: string;
-    partition_key: string;
-    partition_id: number;
-    transaction_id: string;
-    partition_sequence: number;
-    stream_version: number;
-    timestamp: number;
-    stream_id: string;
-    event_name: string;
-    metadata: string | null;
-    payload: string | null;
-}>>;
+export const SierraDBEventSchema = z.object({
+  event_id: z.string(),
+  partition_key: z.string(),
+  partition_id: z.number(),
+  transaction_id: z.string(),
+  partition_sequence: z.number(),
+  stream_version: z.number(),
+  timestamp: z.number(),
+  stream_id: z.instanceof(Buffer),
+  event_name: z.instanceof(Buffer),
+  metadata: z.nullable(z.instanceof(Buffer)),
+  payload: z.nullable(z.instanceof(Buffer)),
+});
+export const PartitionScanResponseSchema = z.object({
+  has_more: z.boolean(),
+  events: z.array(SierraDBEventSchema),
+});
+export const StreamScanResponseSchema = z.object({
+  has_more: z.boolean(),
+  events: z.array(SierraDBEventSchema),
+});
+export const EventGetResponseSchema = z.nullable(SierraDBEventSchema);
 export declare const PingResponseSchema: z.ZodString;
 export type SierraDBEvent = z.infer<typeof SierraDBEventSchema>;
 export type PartitionScanResponse = z.infer<typeof PartitionScanResponseSchema>;

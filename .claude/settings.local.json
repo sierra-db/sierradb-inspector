@@ -8,7 +8,9 @@
       "Bash(npm run type-check:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run lint)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(npm run client:build:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   }

@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useURLState } from '@/hooks/useURLState'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,12 +17,15 @@ import {
 
 export function PartitionExplorer() {
   const { partition: urlPartition } = useParams()
-  const navigate = useNavigate()
   
-  const [partition, setPartition] = useState(urlPartition || '')
-  const [startSequence, setStartSequence] = useState('0')
-  const [endSequence, setEndSequence] = useState('+')
-  const [count, setCount] = useState('100')
+  const [state, updateState] = useURLState({
+    partition: urlPartition || '',
+    startSequence: '0',
+    endSequence: '+',
+    count: '100'
+  })
+  
+  const { partition, startSequence, endSequence, count } = state
   
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['partition-scan', partition, startSequence, endSequence, count],
@@ -37,7 +40,6 @@ export function PartitionExplorer() {
 
   const handleSearch = () => {
     if (partition) {
-      navigate(`/partitions/${partition}`)
       refetch()
     }
   }
@@ -53,16 +55,16 @@ export function PartitionExplorer() {
   const getRandomPartition = () => Math.floor(Math.random() * numPartitions).toString()
   
   const handlePartitionSelect = (partitionId: string) => {
-    setPartition(partitionId)
-    navigate(`/partitions/${partitionId}`)
+    updateState({ partition: partitionId })
   }
 
   const loadNext = () => {
     if (data?.events.length && data.has_more) {
       const lastEvent = data.events[data.events.length - 1]
-      setStartSequence((lastEvent.partition_sequence + 1).toString())
-      // Keep endSequence as '+' when going forward
-      setEndSequence('+')
+      updateState({
+        startSequence: (lastEvent.partition_sequence + 1).toString(),
+        endSequence: '+'
+      })
     }
   }
 
@@ -70,17 +72,19 @@ export function PartitionExplorer() {
     if (data?.events.length) {
       const firstEvent = data.events[0]
       const prevSequence = Math.max(0, firstEvent.partition_sequence - Number(count))
-      setStartSequence(prevSequence.toString())
+      const updates: any = { startSequence: prevSequence.toString() }
       
       // If endSequence is already '+', keep it as '+' (don't change it)
       if (endSequence !== '+') {
         // Only change endSequence if it's not already '+'
         if (prevSequence === 0) {
-          setEndSequence('+')
+          updates.endSequence = '+'
         } else {
-          setEndSequence((firstEvent.partition_sequence - 1).toString())
+          updates.endSequence = (firstEvent.partition_sequence - 1).toString()
         }
       }
+      
+      updateState(updates)
     }
   }
 
@@ -142,7 +146,7 @@ export function PartitionExplorer() {
               <Input
                 placeholder={`Partition ID (0-${numPartitions - 1}) or UUID`}
                 value={partition}
-                onChange={(e) => setPartition(e.target.value)}
+                onChange={(e) => updateState({ partition: e.target.value })}
                 className="flex-1"
               />
               <Button onClick={handleSearch} disabled={!partition}>
@@ -169,7 +173,7 @@ export function PartitionExplorer() {
                 <Input
                   placeholder="0 (beginning)"
                   value={startSequence}
-                  onChange={(e) => setStartSequence(e.target.value)}
+                  onChange={(e) => updateState({ startSequence: e.target.value })}
                 />
               </div>
               <div>
@@ -177,7 +181,7 @@ export function PartitionExplorer() {
                 <Input
                   placeholder="+ (end)"
                   value={endSequence}
-                  onChange={(e) => setEndSequence(e.target.value)}
+                  onChange={(e) => updateState({ endSequence: e.target.value })}
                 />
               </div>
               <div>
@@ -185,7 +189,7 @@ export function PartitionExplorer() {
                 <Input
                   placeholder="100"
                   value={count}
-                  onChange={(e) => setCount(e.target.value)}
+                  onChange={(e) => updateState({ count: e.target.value })}
                 />
               </div>
               <div className="flex items-end">

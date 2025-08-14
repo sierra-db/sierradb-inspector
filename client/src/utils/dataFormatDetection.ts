@@ -80,77 +80,50 @@ function tryParseJson(content: string): any {
  * Try to parse content as CBOR (handles base64/hex encoding)
  */
 function tryParseCbor(content: string): any {
-  console.log('Trying to parse CBOR, content type:', typeof content, 'length:', content.length)
-  console.log('First 50 chars:', content.substring(0, 50))
-  console.log('First 10 char codes:', content.substring(0, 10).split('').map(c => c.charCodeAt(0)))
-  
   // Try base64 decoding first (most common for API responses)
   if (isBase64(content)) {
     try {
-      console.log('Attempting base64 decode...')
       const buffer = base64ToUint8Array(content)
       const result = decode(buffer)
-      console.log('Successfully parsed as base64 CBOR:', result)
       return result
     } catch (error) {
-      console.log('Failed to parse as base64 CBOR:', error)
+      // Continue to next method
     }
   }
   
   // Try hex decoding (less common but possible)
   if (isHex(content)) {
     try {
-      console.log('Attempting hex decode...')
       const buffer = hexToUint8Array(content)
       const result = decode(buffer)
-      console.log('Successfully parsed as hex CBOR:', result)
       return result
     } catch (error) {
-      console.log('Failed to parse as hex CBOR:', error)
+      // Continue to next method
     }
   }
   
   // Try treating the string as raw bytes (convert string to Uint8Array)
   try {
-    console.log('Attempting raw byte conversion...')
     // Convert string to Uint8Array by treating each character as a byte
     const buffer = new Uint8Array(content.length)
     for (let i = 0; i < content.length; i++) {
       buffer[i] = content.charCodeAt(i) & 0xFF
     }
-    console.log('Created buffer:', buffer.slice(0, 10))
     const result = decode(buffer)
-    console.log('Successfully parsed as raw byte CBOR:', result)
     return result
   } catch (error) {
-    console.log('Failed to parse as raw byte CBOR:', error)
+    // Continue to next method
   }
   
   // Try treating as URL-safe base64 (replace - with + and _ with /)
   const urlSafeBase64 = content.replace(/-/g, '+').replace(/_/g, '/')
   if (urlSafeBase64 !== content && isBase64(urlSafeBase64)) {
     try {
-      console.log('Attempting URL-safe base64 decode...')
       const buffer = base64ToUint8Array(urlSafeBase64)
       const result = decode(buffer)
-      console.log('Successfully parsed as URL-safe base64 CBOR:', result)
       return result
     } catch (error) {
-      console.log('Failed to parse as URL-safe base64 CBOR:', error)
-    }
-  }
-  
-  // Last attempt: try to parse as Uint8Array if it looks like comma-separated numbers
-  if (/^\d+(,\s*\d+)*$/.test(content.trim())) {
-    try {
-      console.log('Attempting comma-separated numbers...')
-      const numbers = content.split(',').map(n => parseInt(n.trim()))
-      const buffer = new Uint8Array(numbers)
-      const result = decode(buffer)
-      console.log('Successfully parsed as number array CBOR:', result)
-      return result
-    } catch (error) {
-      console.log('Failed to parse as number array CBOR:', error)
+      // Continue to next method
     }
   }
   
@@ -172,7 +145,7 @@ function isBinaryData(content: string): boolean {
  */
 export function detectDataFormat(
   content: string | null, 
-  encoding?: 'base64-cbor' | 'base64-binary' | null
+  encoding?: 'base64-cbor' | 'base64-binary' | 'json' | null
 ): DataDetectionResult {
   if (!content) {
     return {
@@ -182,21 +155,12 @@ export function detectDataFormat(
     }
   }
 
-  console.log('Detecting format for content:', {
-    preview: content.substring(0, 100),
-    length: content.length,
-    serverEncoding: encoding,
-    isBase64: isBase64(content),
-    isHex: isHex(content),
-    isBinary: isBinaryData(content)
-  })
 
   // If server provided encoding metadata, use it
   if (encoding === 'base64-cbor') {
     try {
       const buffer = base64ToUint8Array(content)
       const cborData = decode(buffer)
-      console.log('Server indicated base64-CBOR, successfully parsed:', cborData)
       return {
         format: 'cbor',
         data: cborData,
@@ -204,13 +168,18 @@ export function detectDataFormat(
         isBase64Encoded: true,
       }
     } catch (error) {
-      console.log('Server indicated base64-CBOR but parsing failed:', error)
-      // Fall through to other detection methods
+      console.error('Server indicated base64-CBOR but parsing failed:', error)
+      // Even if parsing fails, still treat as CBOR format to show manual override options
+      return {
+        format: 'cbor',
+        data: `Failed to parse CBOR: ${error instanceof Error ? error.message : String(error)}`,
+        originalContent: content,
+        isBase64Encoded: true,
+      }
     }
   }
 
   if (encoding === 'base64-binary') {
-    console.log('Server indicated base64-binary')
     return {
       format: 'binary',
       data: content,
@@ -222,7 +191,6 @@ export function detectDataFormat(
   // Try JSON first (most common structured format)
   const jsonData = tryParseJson(content)
   if (jsonData !== null) {
-    console.log('Detected as JSON')
     return {
       format: 'json',
       data: jsonData,
@@ -233,7 +201,6 @@ export function detectDataFormat(
   // Try CBOR parsing (could be base64 or hex encoded)
   const cborData = tryParseCbor(content)
   if (cborData !== null) {
-    console.log('Detected as CBOR', cborData)
     return {
       format: 'cbor',
       data: cborData,
@@ -245,7 +212,6 @@ export function detectDataFormat(
 
   // Check if it looks like binary data
   if (isBinaryData(content) || isBase64(content) || isHex(content)) {
-    console.log('Detected as binary')
     return {
       format: 'binary',
       data: content,
@@ -256,7 +222,6 @@ export function detectDataFormat(
   }
 
   // Default to text
-  console.log('Detected as text')
   return {
     format: 'text',
     data: content,

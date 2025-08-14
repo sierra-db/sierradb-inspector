@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useURLState } from '@/hooks/useURLState'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,13 +17,16 @@ import {
 
 export function StreamExplorer() {
   const { streamId: urlStreamId } = useParams()
-  const navigate = useNavigate()
   
-  const [streamId, setStreamId] = useState(urlStreamId || '')
-  const [startVersion, setStartVersion] = useState('0')
-  const [endVersion, setEndVersion] = useState('+')
-  const [partitionKey, setPartitionKey] = useState('')
-  const [count, setCount] = useState('100')
+  const [state, updateState] = useURLState({
+    streamId: urlStreamId || '',
+    startVersion: '0',
+    endVersion: '+',
+    partitionKey: '',
+    count: '100'
+  })
+  
+  const { streamId, startVersion, endVersion, partitionKey, count } = state
   
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['stream-scan', streamId, startVersion, endVersion, partitionKey, count],
@@ -39,7 +42,6 @@ export function StreamExplorer() {
 
   const handleSearch = () => {
     if (streamId) {
-      navigate(`/streams/${encodeURIComponent(streamId)}`)
       refetch()
     }
   }
@@ -47,9 +49,10 @@ export function StreamExplorer() {
   const loadNext = () => {
     if (data?.events.length && data.has_more) {
       const lastEvent = data.events[data.events.length - 1]
-      setStartVersion((lastEvent.stream_version + 1).toString())
-      // Keep endVersion as '+' when going forward
-      setEndVersion('+')
+      updateState({
+        startVersion: (lastEvent.stream_version + 1).toString(),
+        endVersion: '+'
+      })
     }
   }
 
@@ -57,23 +60,27 @@ export function StreamExplorer() {
     if (data?.events.length) {
       const firstEvent = data.events[0]
       const prevVersion = Math.max(0, firstEvent.stream_version - Number(count))
-      setStartVersion(prevVersion.toString())
+      const updates: any = { startVersion: prevVersion.toString() }
       
       // If endVersion is already '+', keep it as '+' (don't change it)
       if (endVersion !== '+') {
         // Only change endVersion if it's not already '+'
         if (prevVersion === 0) {
-          setEndVersion('+')
+          updates.endVersion = '+'
         } else {
-          setEndVersion((firstEvent.stream_version - 1).toString())
+          updates.endVersion = (firstEvent.stream_version - 1).toString()
         }
       }
+      
+      updateState(updates)
     }
   }
 
   const resetToLatest = () => {
-    setStartVersion('0')
-    setEndVersion('+')
+    updateState({
+      startVersion: '0',
+      endVersion: '+'
+    })
   }
 
   return (
@@ -100,7 +107,7 @@ export function StreamExplorer() {
             <Input
               placeholder="Stream ID (e.g., user-123, order-456)"
               value={streamId}
-              onChange={(e) => setStreamId(e.target.value)}
+              onChange={(e) => updateState({ streamId: e.target.value })}
               className="flex-1"
             />
             <Button onClick={handleSearch} disabled={!streamId}>
@@ -126,7 +133,7 @@ export function StreamExplorer() {
                 <Input
                   placeholder="0 (beginning)"
                   value={startVersion}
-                  onChange={(e) => setStartVersion(e.target.value)}
+                  onChange={(e) => updateState({ startVersion: e.target.value })}
                 />
               </div>
               <div>
@@ -134,7 +141,7 @@ export function StreamExplorer() {
                 <Input
                   placeholder="+ (end)"
                   value={endVersion}
-                  onChange={(e) => setEndVersion(e.target.value)}
+                  onChange={(e) => updateState({ endVersion: e.target.value })}
                 />
               </div>
               <div>
@@ -142,7 +149,7 @@ export function StreamExplorer() {
                 <Input
                   placeholder="UUID partition key"
                   value={partitionKey}
-                  onChange={(e) => setPartitionKey(e.target.value)}
+                  onChange={(e) => updateState({ partitionKey: e.target.value })}
                 />
               </div>
               <div>
@@ -150,7 +157,7 @@ export function StreamExplorer() {
                 <Input
                   placeholder="100"
                   value={count}
-                  onChange={(e) => setCount(e.target.value)}
+                  onChange={(e) => updateState({ count: e.target.value })}
                 />
               </div>
               <div className="flex items-end gap-2">
