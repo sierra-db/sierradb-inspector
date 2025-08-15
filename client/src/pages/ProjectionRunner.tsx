@@ -339,7 +339,7 @@ export function ProjectionRunner() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col">
       <div className="p-6 pb-0 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>

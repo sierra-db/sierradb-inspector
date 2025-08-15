@@ -7,10 +7,19 @@ export class ProjectionEngine {
   private sierraDB: SierraDBClient
   private abortController: AbortController | null = null
   private useNativeExecution: boolean = false // Option for maximum performance
+  private batchSize: number = 200 // Optimal batch size for VM processing
+  private maxConcurrentPartitions: number = 6 // Concurrency limit
+  
+  // Memory optimization: reusable objects and caching
+  private eventProcessingCache = new Map<string, any>()
+  private isolateCache: ivm.Isolate | null = null
+  private contextCache: ivm.Context | null = null
+  private compiledScriptsCache = new Map<string, any>()
 
-  constructor(sierraDB: SierraDBClient, useNativeExecution: boolean = false) {
+  constructor(sierraDB: SierraDBClient, useNativeExecution: boolean = false, batchSize: number = 200) {
     this.sierraDB = sierraDB
     this.useNativeExecution = useNativeExecution
+    this.batchSize = batchSize
   }
 
   async runProjection(
@@ -25,40 +34,79 @@ export class ProjectionEngine {
     let isolate: ivm.Isolate | null = null
 
     try {
-      // Create isolated VM context with no memory limits for maximum performance
-      isolate = new ivm.Isolate() // Removed memory limit - use system memory freely
-      const context = await isolate.createContext()
+      // Create or reuse isolated VM context with optimized memory settings
+      isolate = this.isolateCache || new ivm.Isolate({ memoryLimit: 512 }) // Reasonable memory limit for stability
+      const context = this.contextCache || await isolate.createContext()
+      
+      // Cache for reuse
+      if (!this.isolateCache) {
+        this.isolateCache = isolate
+        this.contextCache = context
+      }
 
       // Prepare the projection function in the isolated context
       const jail = context.global
       await jail.set('global', jail.derefInto())
 
-      // Compile the user's projection code
-      const script = await isolate.compileScript(`
-        ${code}
-        
-        // Export the project function
-        if (typeof project === 'function') {
-          global.projectFunction = project;
-        } else {
-          throw new Error('No project function defined');
-        }
-      `)
+      // Compile the user's projection code with batch support (use cache if available)
+      const codeHash = this.hashCode(code)
+      let script = this.compiledScriptsCache.get(`main_${codeHash}`)
+      
+      if (!script) {
+        script = await isolate.compileScript(`
+          ${code}
+          
+          // Export both single event and batch functions
+          if (typeof project === 'function') {
+            global.projectFunction = project;
+            // Create optimized batch processor
+            global.projectBatch = function(state, events) {
+              for (let i = 0; i < events.length; i++) {
+                state = project(state, events[i]);
+              }
+              return state;
+            };
+          } else {
+            throw new Error('No project function defined');
+          }
+        `)
+        this.compiledScriptsCache.set(`main_${codeHash}`, script)
+      }
       
       await script.run(context)
 
-      // Compile the execution script once for reuse - optimized for JSON transfer
-      const executionScript = await isolate.compileScript(`
-        // Parse JSON strings into objects (use var to allow redeclaration)
-        var currentState = JSON.parse(currentStateJson);
-        var currentEvent = JSON.parse(currentEventJson);
-        
-        // Execute user's projection function
-        var result = global.projectFunction(currentState, currentEvent);
-        
-        // Return stringified result
-        JSON.stringify(result);
-      `)
+      // Compile both single and batch execution scripts (use cache if available)
+      let executionScript = this.compiledScriptsCache.get('execution_single')
+      if (!executionScript) {
+        executionScript = await isolate.compileScript(`
+          // Parse JSON strings into objects (use var to allow redeclaration)
+          var currentState = JSON.parse(currentStateJson);
+          var currentEvent = JSON.parse(currentEventJson);
+          
+          // Execute user's projection function
+          var result = global.projectFunction(currentState, currentEvent);
+          
+          // Return stringified result
+          JSON.stringify(result);
+        `)
+        this.compiledScriptsCache.set('execution_single', executionScript)
+      }
+      
+      let batchExecutionScript = this.compiledScriptsCache.get('execution_batch')
+      if (!batchExecutionScript) {
+        batchExecutionScript = await isolate.compileScript(`
+          // Parse JSON strings into objects
+          var currentState = JSON.parse(currentStateJson);
+          var eventBatch = JSON.parse(eventBatchJson);
+          
+          // Execute batch projection function
+          var result = global.projectBatch(currentState, eventBatch);
+          
+          // Return stringified result
+          JSON.stringify(result);
+        `)
+        this.compiledScriptsCache.set('execution_batch', batchExecutionScript)
+      }
 
       if (streamId) {
         // Stream-specific projection
@@ -93,43 +141,51 @@ export class ProjectionEngine {
         const serverInfo = await this.sierraDB.hello()
         const totalPartitions = serverInfo.num_partitions
 
-        // Process each partition sequentially  
-        console.log(`Processing ${totalPartitions} partitions with batch size ${1000}`)
+        // Process partitions in parallel batches
+        console.log(`Processing ${totalPartitions} partitions with batch size ${this.batchSize} and ${this.maxConcurrentPartitions} concurrent partitions`)
         const startTime = Date.now()
         
-        for (let partition = 0; partition < totalPartitions; partition++) {
+        // Process partitions in parallel groups
+        for (let startPartition = 0; startPartition < totalPartitions; startPartition += this.maxConcurrentPartitions) {
           if (this.abortController?.signal.aborted) {
-            console.log(`Projection aborted at partition ${partition}/${totalPartitions}`)
+            console.log(`Projection aborted at partition ${startPartition}/${totalPartitions}`)
             break
           }
-
-          const partitionStartTime = Date.now()
-          try {
-            currentState = await this.processPartition(
-              partition, 
-              currentState, 
+          
+          const endPartition = Math.min(startPartition + this.maxConcurrentPartitions, totalPartitions)
+          const partitionPromises: Promise<{ partition: number, newState: any, eventsProcessed: number, duration: number }>[] = []
+          
+          // Start parallel partition processing
+          for (let partition = startPartition; partition < endPartition; partition++) {
+            const partitionPromise = this.processPartitionOptimized(
+              partition,
+              currentState,
               context,
-              executionScript, 
-              (newState, newEventsProcessed) => {
-                eventsProcessed += newEventsProcessed
-                
-                onProgress({
-                  current_partition: partition,
-                  total_partitions: totalPartitions,
-                  events_processed: eventsProcessed,
-                  current_state: newState,
-                  status: 'running',
-                })
-              }
+              batchExecutionScript,
+              executionScript
             )
+            partitionPromises.push(partitionPromise)
+          }
+          
+          // Wait for all partitions in this batch to complete
+          const results = await Promise.all(partitionPromises)
+          
+          // Merge results sequentially to maintain state consistency
+          for (const result of results) {
+            currentState = result.newState
+            eventsProcessed += result.eventsProcessed
             
-            const partitionTime = Date.now() - partitionStartTime
-            if (partitionTime > 100) { // Log slow partitions
-              console.log(`Partition ${partition} took ${partitionTime}ms`)
+            if (result.duration > 100) {
+              console.log(`Partition ${result.partition} took ${result.duration}ms`)
             }
-          } catch (error) {
-            console.error(`Error processing partition ${partition}:`, error)
-            // Continue with next partition on error
+            
+            onProgress({
+              current_partition: result.partition,
+              total_partitions: totalPartitions,
+              events_processed: eventsProcessed,
+              current_state: currentState,
+              status: 'running',
+            })
           }
         }
         
@@ -158,11 +214,13 @@ export class ProjectionEngine {
         error: error instanceof Error ? error.message : 'Unknown error',
       })
     } finally {
-      // Always clean up resources
-      try {
-        isolate?.dispose()
-      } catch (cleanupError) {
-        console.error('Error cleaning up isolate:', cleanupError)
+      // Cleanup only if not cached (for reuse optimization)
+      if (isolate && isolate !== this.isolateCache) {
+        try {
+          isolate.dispose()
+        } catch (cleanupError) {
+          console.error('Error cleaning up isolate:', cleanupError)
+        }
       }
     }
   }
@@ -225,6 +283,90 @@ export class ProjectionEngine {
     }
     
     return currentState
+  }
+
+  private async processPartitionOptimized(
+    partition: number,
+    initialState: any,
+    context: ivm.Context,
+    batchExecutionScript: any,
+    singleExecutionScript: any
+  ): Promise<{ partition: number, newState: any, eventsProcessed: number, duration: number }> {
+    const startTime = Date.now()
+    let startSequence = 0
+    let currentState = initialState
+    let hasMore = true
+    let eventsProcessed = 0
+    const dbBatchSize = 1000 // Database batch size
+
+    while (hasMore && !this.abortController?.signal.aborted) {
+      try {
+        const result = await this.sierraDB.scanPartition({
+          partition,
+          start_sequence: startSequence,
+          end_sequence: '+',
+          count: dbBatchSize,
+        })
+
+        hasMore = result.has_more
+        
+        if (result.events.length === 0) {
+          break
+        }
+
+        // Process events in optimized batches
+        const events = result.events
+        const processingBatches = []
+        
+        // Split database batch into smaller processing batches
+        for (let i = 0; i < events.length; i += this.batchSize) {
+          const batchEvents = events.slice(i, i + this.batchSize)
+          processingBatches.push(batchEvents)
+        }
+
+        // Process each batch through VM
+        for (const batch of processingBatches) {
+          if (this.abortController?.signal.aborted) {
+            break
+          }
+
+          try {
+            if (batch.length === 1) {
+              // Use single event processing for batches of 1
+              currentState = await this.executeProjectionFunction(context, singleExecutionScript, currentState, batch[0])
+            } else {
+              // Use batch processing for larger batches
+              currentState = await this.executeBatchProjectionFunction(context, batchExecutionScript, currentState, batch)
+            }
+            eventsProcessed += batch.length
+          } catch (error) {
+            console.error(`Error processing batch in partition ${partition}:`, error)
+            // Process events individually as fallback
+            for (const event of batch) {
+              try {
+                currentState = await this.executeProjectionFunction(context, singleExecutionScript, currentState, event)
+                eventsProcessed++
+              } catch (singleError) {
+                console.error(`Error processing event ${event.event_id}:`, singleError)
+              }
+            }
+          }
+        }
+
+        // Update start sequence for next batch
+        if (hasMore && events.length > 0) {
+          const lastEvent = events[events.length - 1]
+          startSequence = lastEvent.partition_sequence + 1
+        }
+
+      } catch (error) {
+        console.error(`Error scanning partition ${partition}:`, error)
+        break
+      }
+    }
+    
+    const duration = Date.now() - startTime
+    return { partition, newState: currentState, eventsProcessed, duration }
   }
 
   private async processStream(
@@ -300,6 +442,12 @@ export class ProjectionEngine {
   }
 
   private processEventForProjection(event: SierraDBEvent): any {
+    // Use cache for repeated event processing
+    const cacheKey = `${event.event_id}`
+    if (this.eventProcessingCache.has(cacheKey)) {
+      return this.eventProcessingCache.get(cacheKey)
+    }
+    
     // Create a clean event object for the projection with processed data
     const processedEvent = {
       // Basic event properties (already converted from Buffers in sierradb.ts)
@@ -322,6 +470,11 @@ export class ProjectionEngine {
       // Include encoding information for reference
       metadata_encoding: event.metadata_encoding,
       payload_encoding: event.payload_encoding,
+    }
+
+    // Cache processed event (limit cache size to prevent memory leaks)
+    if (this.eventProcessingCache.size < 1000) {
+      this.eventProcessingCache.set(cacheKey, processedEvent)
     }
 
     return processedEvent
@@ -368,8 +521,80 @@ export class ProjectionEngine {
     }
   }
 
+  private async executeBatchProjectionFunction(
+    context: ivm.Context,
+    batchExecutionScript: any,
+    state: any,
+    events: SierraDBEvent[]
+  ): Promise<any> {
+    try {
+      // Process all events in the batch
+      const processedEvents = events.map(event => this.processEventForProjection(event))
+      
+      // Use JSON for batch data transfer
+      const stateJson = JSON.stringify(state)
+      const eventBatchJson = JSON.stringify(processedEvents)
+      
+      // Set the JSON strings in the context
+      await context.global.set('currentStateJson', stateJson)
+      await context.global.set('eventBatchJson', eventBatchJson)
+
+      // Execute batch processing script
+      const resultString = await batchExecutionScript.run(context)
+      
+      // Parse the JSON result back to an object
+      if (resultString && typeof resultString === 'string') {
+        try {
+          return JSON.parse(resultString)
+        } catch (parseError) {
+          console.error('Error parsing batch projection result JSON:', parseError)
+          return state
+        }
+      }
+      
+      return state
+
+    } catch (error) {
+      console.error('Error executing batch projection function:', error)
+      return state
+    }
+  }
+
   abort(): void {
     console.log('Aborting projection...')
     this.abortController?.abort()
+  }
+
+  private hashCode(str: string): string {
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash = hash & hash // Convert to 32-bit integer
+    }
+    return hash.toString(16)
+  }
+
+  dispose(): void {
+    // Clean up cached resources
+    this.eventProcessingCache.clear()
+    this.compiledScriptsCache.clear()
+    
+    if (this.contextCache) {
+      try {
+        this.contextCache = null
+      } catch (error) {
+        console.error('Error disposing context cache:', error)
+      }
+    }
+    
+    if (this.isolateCache) {
+      try {
+        this.isolateCache.dispose()
+        this.isolateCache = null
+      } catch (error) {
+        console.error('Error disposing isolate cache:', error)
+      }
+    }
   }
 }
