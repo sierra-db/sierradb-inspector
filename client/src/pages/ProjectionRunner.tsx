@@ -1,8 +1,11 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { JsonViewer } from '@/components/JsonViewer'
+import { useSavedProjections } from '@/hooks/useSavedProjections'
 import { 
   Calculator, 
   Play, 
@@ -12,7 +15,9 @@ import {
   CheckCircle,
   Bug,
   StepForward,
-  RotateCcw
+  RotateCcw,
+  Save,
+  X
 } from 'lucide-react'
 import { ProjectionProgress, ProjectionRunRequest, DebugSessionStatus } from '../types.js'
 import { api } from '@/lib/api'
@@ -46,11 +51,26 @@ function project(state, event) {
 }`
 
 export function ProjectionRunner() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { saveProjection, updateProjection, getProjection } = useSavedProjections()
+  
+  const editId = searchParams.get('edit')
+  const editingProjection = editId ? getProjection(editId) : null
+  
   const [code, setCode] = useState(() => {
+    if (editingProjection) return editingProjection.code
     // Load from localStorage if available
     const saved = localStorage.getItem('projection-code')
     return saved || defaultProjectionCode
   })
+  
+  // Save dialog state
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [saveName, setSaveName] = useState(editingProjection?.name || '')
+  const [saveDescription, setSaveDescription] = useState(editingProjection?.description || '')
+  const [saveCategory, setSaveCategory] = useState(editingProjection?.category || '')
+  const [saveRenderMode, setSaveRenderMode] = useState<'html' | 'json'>(editingProjection?.renderMode || 'html')
   
   // Normal mode state
   const [isRunning, setIsRunning] = useState(false)
@@ -64,12 +84,76 @@ export function ProjectionRunner() {
   const [debugSessionId, setDebugSessionId] = useState<string | null>(null)
   
   // Stream mode state
-  const [streamMode, setStreamMode] = useState(false)
-  const [streamId, setStreamId] = useState('')
+  const [streamMode, setStreamMode] = useState(editingProjection?.streamId ? true : false)
+  const [streamId, setStreamId] = useState(editingProjection?.streamId || '')
+
+  // Load projection when editing
+  useEffect(() => {
+    if (editingProjection) {
+      setCode(editingProjection.code)
+      setSaveName(editingProjection.name)
+      setSaveDescription(editingProjection.description || '')
+      setSaveCategory(editingProjection.category || '')
+      setSaveRenderMode(editingProjection.renderMode)
+      if (editingProjection.streamId) {
+        setStreamMode(true)
+        setStreamId(editingProjection.streamId)
+      }
+    }
+  }, [editingProjection])
 
   const saveCodeToStorage = useCallback(() => {
     localStorage.setItem('projection-code', code)
   }, [code])
+
+  const handleSaveProjection = async () => {
+    if (!saveName.trim()) {
+      alert('Please enter a name for the projection')
+      return
+    }
+
+    try {
+      if (editingProjection) {
+        // Update existing projection
+        updateProjection(editingProjection.id, {
+          name: saveName,
+          description: saveDescription,
+          category: saveCategory,
+          code,
+          renderMode: saveRenderMode,
+          streamId: streamMode ? streamId : undefined
+        })
+      } else {
+        // Save new projection
+        saveProjection({
+          name: saveName,
+          description: saveDescription,
+          category: saveCategory,
+          code,
+          renderMode: saveRenderMode,
+          streamId: streamMode ? streamId : undefined
+        })
+      }
+
+      setShowSaveDialog(false)
+      
+      // Navigate to the saved projections page after saving
+      setTimeout(() => {
+        navigate('/saved-projections')
+      }, 100)
+    } catch (error) {
+      alert('Failed to save projection')
+      console.error('Save error:', error)
+    }
+  }
+
+  const openSaveDialog = () => {
+    if (!editingProjection && !saveName) {
+      // Auto-generate a name based on the current timestamp
+      setSaveName(`Projection ${new Date().toLocaleDateString()}`)
+    }
+    setShowSaveDialog(true)
+  }
 
   const runProjection = async () => {
     if (isRunning) return
@@ -261,14 +345,25 @@ export function ProjectionRunner() {
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <Calculator className="h-8 w-8" />
-              Projection Runner
+              {editingProjection ? `Edit: ${editingProjection.name}` : 'Projection Runner'}
             </h1>
             <p className="text-muted-foreground mt-2">
-              Write and run custom projections across all events or specific streams in SierraDB
+              {editingProjection 
+                ? 'Edit and update your saved projection'
+                : 'Write and run custom projections across all events or specific streams in SierraDB'
+              }
             </p>
           </div>
           
           <div className="flex items-center gap-6">
+            <Button
+              onClick={openSaveDialog}
+              disabled={!code.trim()}
+              variant="outline"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {editingProjection ? 'Update' : 'Save'} Projection
+            </Button>
             <div className="flex items-center gap-2">
               <Bug className="h-4 w-4" />
               <label className="text-sm font-medium">Debug Mode</label>
@@ -601,6 +696,94 @@ export function ProjectionRunner() {
           </Card>
         </div>
       </div>
+
+      {/* Save Dialog */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>{editingProjection ? 'Update' : 'Save'} Projection</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSaveDialog(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </CardTitle>
+              <CardDescription>
+                {editingProjection 
+                  ? 'Update the projection settings'
+                  : 'Save this projection for later use and custom HTML rendering'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Name *</label>
+                <Input
+                  placeholder="e.g., Active Games, Revenue Summary"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-2 block">Description</label>
+                <Input
+                  placeholder="Brief description of what this projection does"
+                  value={saveDescription}
+                  onChange={(e) => setSaveDescription(e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-2 block">Category</label>
+                <Input
+                  placeholder="e.g., Analytics, Reports, Dashboard"
+                  value={saveCategory}
+                  onChange={(e) => setSaveCategory(e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-2 block">Display Mode</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      value="html"
+                      checked={saveRenderMode === 'html'}
+                      onChange={(e) => setSaveRenderMode(e.target.value as 'html')}
+                    />
+                    <span className="text-sm">HTML (Smart rendering)</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      value="json"
+                      checked={saveRenderMode === 'json'}
+                      onChange={(e) => setSaveRenderMode(e.target.value as 'json')}
+                    />
+                    <span className="text-sm">JSON (Raw data)</span>
+                  </label>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button onClick={handleSaveProjection} className="flex-1">
+                  <Save className="h-4 w-4 mr-2" />
+                  {editingProjection ? 'Update' : 'Save'}
+                </Button>
+                <Button variant="outline" onClick={() => setShowSaveDialog(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

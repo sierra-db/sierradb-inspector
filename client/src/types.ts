@@ -87,3 +87,35 @@ export interface DebugStepResponse {
   stateChanged: boolean
   processingComplete: boolean
 }
+
+// Saved Projections Types
+export interface SavedProjection {
+  id: string
+  name: string
+  code: string
+  description?: string
+  createdAt: string // ISO date string for localStorage compatibility
+  updatedAt: string
+  streamId?: string // for stream-specific projections
+  renderMode: 'json' | 'html' // how to display results
+  htmlTemplate?: string // optional custom HTML template
+  category?: string // for organization
+}
+
+export interface SavedProjectionResult {
+  projectionId: string
+  result: any
+  status: 'completed' | 'error' | 'running'
+  error?: string
+  lastRun: string // ISO date string
+  eventsProcessed?: number
+}
+
+export type RenderTemplate = 'list' | 'stats' | 'table' | 'custom' | 'auto'
+
+export interface HTMLRenderConfig {
+  template: RenderTemplate
+  customTemplate?: string
+  title?: string
+  description?: string
+}

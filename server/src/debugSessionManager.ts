@@ -55,8 +55,8 @@ export class DebugSessionManager {
       const serverInfo = await this.sierraDB.hello()
       const totalPartitions = serverInfo.num_partitions
 
-      // Create isolated VM context
-      const isolate = new ivm.Isolate({ memoryLimit: 128 })
+      // Create isolated VM context with no memory limits
+      const isolate = new ivm.Isolate()
       const context = await isolate.createContext()
 
       // Prepare the projection function in the isolated context
@@ -80,13 +80,17 @@ export class DebugSessionManager {
       
       await script.run(context)
 
-      // Compile the execution script once for reuse
+      // Compile the execution script once for reuse - optimized for JSON transfer
       const executionScript = await isolate.compileScript(`
         // Clear console logs for this execution
         global.debugLogs = [];
         
         try {
-          const result = global.projectFunction(currentState, currentEvent);
+          // Parse JSON strings into objects (use var to allow redeclaration)
+          var currentState = JSON.parse(currentStateJson);
+          var currentEvent = JSON.parse(currentEventJson);
+          
+          var result = global.projectFunction(currentState, currentEvent);
           JSON.stringify({ result: result, logs: global.debugLogs });
         } catch (error) {
           JSON.stringify({ error: error.message, logs: global.debugLogs });
@@ -336,18 +340,63 @@ export class DebugSessionManager {
     }
   }
 
+  private safeParseJSON(jsonString: string | null): any {
+    if (!jsonString) return null
+    
+    try {
+      return JSON.parse(jsonString)
+    } catch (error) {
+      console.warn('Failed to parse JSON in debug session:', error)
+      return jsonString // Return the raw string if parsing fails
+    }
+  }
+
+  private processEventForProjection(event: SierraDBEvent): any {
+    // Create a clean event object for the projection with processed data
+    const processedEvent = {
+      // Basic event properties (already converted from Buffers in sierradb.ts)
+      event_id: event.event_id,
+      partition_key: event.partition_key,
+      partition_id: event.partition_id,
+      transaction_id: event.transaction_id,
+      partition_sequence: event.partition_sequence,
+      stream_version: event.stream_version,
+      timestamp: event.timestamp,
+      stream_id: event.stream_id,
+      event_name: event.event_name,
+      
+      // Process metadata - use parsed version if available, otherwise try to parse the raw string
+      metadata: event.metadata_parsed || this.safeParseJSON(event.metadata),
+      
+      // Process payload - use parsed version if available, otherwise try to parse the raw string  
+      payload: event.payload_parsed || this.safeParseJSON(event.payload),
+      
+      // Include encoding information for reference
+      metadata_encoding: event.metadata_encoding,
+      payload_encoding: event.payload_encoding,
+    }
+
+    return processedEvent
+  }
+
   private async executeProjectionFunction(session: DebugSession, event: SierraDBEvent): Promise<{
     result?: any
     error?: string
     logs: ConsoleLog[]
   }> {
     try {
-      // Pass state and event to the isolated context
-      await session.context.global.set('currentState', new ivm.ExternalCopy(session.currentState).copyInto())
-      await session.context.global.set('currentEvent', new ivm.ExternalCopy(event).copyInto())
+      // Process the event to make it projection-friendly  
+      const processedEvent = this.processEventForProjection(event)
+      
+      // PERFORMANCE OPTIMIZATION: Use JSON for data transfer instead of ExternalCopy
+      const stateJson = JSON.stringify(session.currentState)
+      const eventJson = JSON.stringify(processedEvent)
+      
+      await session.context.global.set('currentStateJson', stateJson)
+      await session.context.global.set('currentEventJson', eventJson)
 
-      // Execute the pre-compiled script
-      const resultString = await session.executionScript.run(session.context, { timeout: 5000 })
+      // Execute the pre-compiled script with no timeout
+      const resultString = await session.executionScript.run(session.context)
       
       if (resultString && typeof resultString === 'string') {
         const parsed = JSON.parse(resultString)

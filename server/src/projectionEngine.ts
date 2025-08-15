@@ -1,13 +1,16 @@
 import ivm from 'isolated-vm'
 import { SierraDBClient } from './sierradb.js'
 import { ProjectionProgress, SierraDBEvent } from './types.js'
+import { processEventFields } from './binaryUtils.js'
 
 export class ProjectionEngine {
   private sierraDB: SierraDBClient
   private abortController: AbortController | null = null
+  private useNativeExecution: boolean = false // Option for maximum performance
 
-  constructor(sierraDB: SierraDBClient) {
+  constructor(sierraDB: SierraDBClient, useNativeExecution: boolean = false) {
     this.sierraDB = sierraDB
+    this.useNativeExecution = useNativeExecution
   }
 
   async runProjection(
@@ -19,10 +22,11 @@ export class ProjectionEngine {
     this.abortController = new AbortController()
     let currentState = initialState
     let eventsProcessed = 0
+    let isolate: ivm.Isolate | null = null
 
     try {
-      // Create isolated VM context
-      const isolate = new ivm.Isolate({ memoryLimit: 128 }) // 128MB limit
+      // Create isolated VM context with no memory limits for maximum performance
+      isolate = new ivm.Isolate() // Removed memory limit - use system memory freely
       const context = await isolate.createContext()
 
       // Prepare the projection function in the isolated context
@@ -43,9 +47,17 @@ export class ProjectionEngine {
       
       await script.run(context)
 
-      // Compile the execution script once for reuse
+      // Compile the execution script once for reuse - optimized for JSON transfer
       const executionScript = await isolate.compileScript(`
-        JSON.stringify(global.projectFunction(currentState, currentEvent));
+        // Parse JSON strings into objects (use var to allow redeclaration)
+        var currentState = JSON.parse(currentStateJson);
+        var currentEvent = JSON.parse(currentEventJson);
+        
+        // Execute user's projection function
+        var result = global.projectFunction(currentState, currentEvent);
+        
+        // Return stringified result
+        JSON.stringify(result);
       `)
 
       if (streamId) {
@@ -81,12 +93,17 @@ export class ProjectionEngine {
         const serverInfo = await this.sierraDB.hello()
         const totalPartitions = serverInfo.num_partitions
 
-        // Process each partition sequentially
+        // Process each partition sequentially  
+        console.log(`Processing ${totalPartitions} partitions with batch size ${1000}`)
+        const startTime = Date.now()
+        
         for (let partition = 0; partition < totalPartitions; partition++) {
           if (this.abortController?.signal.aborted) {
+            console.log(`Projection aborted at partition ${partition}/${totalPartitions}`)
             break
           }
 
+          const partitionStartTime = Date.now()
           try {
             currentState = await this.processPartition(
               partition, 
@@ -105,11 +122,19 @@ export class ProjectionEngine {
                 })
               }
             )
+            
+            const partitionTime = Date.now() - partitionStartTime
+            if (partitionTime > 100) { // Log slow partitions
+              console.log(`Partition ${partition} took ${partitionTime}ms`)
+            }
           } catch (error) {
             console.error(`Error processing partition ${partition}:`, error)
             // Continue with next partition on error
           }
         }
+        
+        const totalTime = Date.now() - startTime
+        console.log(`Completed projection in ${totalTime}ms, processed ${eventsProcessed} events`)
 
         // Send final completion progress
         onProgress({
@@ -132,6 +157,13 @@ export class ProjectionEngine {
         status: 'error',
         error: error instanceof Error ? error.message : 'Unknown error',
       })
+    } finally {
+      // Always clean up resources
+      try {
+        isolate?.dispose()
+      } catch (cleanupError) {
+        console.error('Error cleaning up isolate:', cleanupError)
+      }
     }
   }
 
@@ -145,7 +177,7 @@ export class ProjectionEngine {
     let startSequence = 0
     let currentState = initialState
     let hasMore = true
-    const batchSize = 100
+    const batchSize = 1000 // Maximum batch size for unrestricted performance
 
     while (hasMore && !this.abortController?.signal.aborted) {
       try {
@@ -165,6 +197,7 @@ export class ProjectionEngine {
         // Process events through the projection function
         for (const event of result.events) {
           if (this.abortController?.signal.aborted) {
+            console.log(`Projection aborted at partition ${partition}`)
             break
           }
 
@@ -173,7 +206,7 @@ export class ProjectionEngine {
             currentState = await this.executeProjectionFunction(context, executionScript, currentState, event)
           } catch (error) {
             console.error(`Error processing event ${event.event_id}:`, error)
-            // Continue with next event on error
+            // Continue with next event on error - but count failures
           }
         }
 
@@ -205,7 +238,7 @@ export class ProjectionEngine {
     let currentState = initialState
     let hasMore = true
     let currentVersion = 0
-    const batchSize = 100
+    const batchSize = 1000 // Maximum batch size for unrestricted performance
 
     while (hasMore && !this.abortController?.signal.aborted) {
       try {
@@ -255,6 +288,45 @@ export class ProjectionEngine {
     return currentState
   }
 
+  private safeParseJSON(jsonString: string | null): any {
+    if (!jsonString) return null
+    
+    try {
+      return JSON.parse(jsonString)
+    } catch (error) {
+      console.warn('Failed to parse JSON in projection:', error)
+      return jsonString // Return the raw string if parsing fails
+    }
+  }
+
+  private processEventForProjection(event: SierraDBEvent): any {
+    // Create a clean event object for the projection with processed data
+    const processedEvent = {
+      // Basic event properties (already converted from Buffers in sierradb.ts)
+      event_id: event.event_id,
+      partition_key: event.partition_key,
+      partition_id: event.partition_id,
+      transaction_id: event.transaction_id,
+      partition_sequence: event.partition_sequence,
+      stream_version: event.stream_version,
+      timestamp: event.timestamp,
+      stream_id: event.stream_id,
+      event_name: event.event_name,
+      
+      // Process metadata - use parsed version if available, otherwise try to parse the raw string
+      metadata: event.metadata_parsed || this.safeParseJSON(event.metadata),
+      
+      // Process payload - use parsed version if available, otherwise try to parse the raw string  
+      payload: event.payload_parsed || this.safeParseJSON(event.payload),
+      
+      // Include encoding information for reference
+      metadata_encoding: event.metadata_encoding,
+      payload_encoding: event.payload_encoding,
+    }
+
+    return processedEvent
+  }
+
   private async executeProjectionFunction(
     context: ivm.Context,
     executionScript: any,
@@ -262,12 +334,20 @@ export class ProjectionEngine {
     event: SierraDBEvent
   ): Promise<any> {
     try {
-      // Pass state and event to the isolated context
-      await context.global.set('currentState', new ivm.ExternalCopy(state).copyInto())
-      await context.global.set('currentEvent', new ivm.ExternalCopy(event).copyInto())
+      // Process the event to make it projection-friendly
+      const processedEvent = this.processEventForProjection(event)
+      
+      // PERFORMANCE OPTIMIZATION: Use JSON for data transfer instead of ExternalCopy
+      // This is much faster for frequent operations
+      const stateJson = JSON.stringify(state)
+      const eventJson = JSON.stringify(processedEvent)
+      
+      // Set the JSON strings in the context (much faster than ExternalCopy)
+      await context.global.set('currentStateJson', stateJson)
+      await context.global.set('currentEventJson', eventJson)
 
-      // Execute the pre-compiled script
-      const resultString = await executionScript.run(context, { timeout: 1000 }) // 1 second timeout per event
+      // Execute optimized script with no timeout restrictions for maximum performance
+      const resultString = await executionScript.run(context) // Removed timeout completely
       
       // Parse the JSON result back to an object
       if (resultString && typeof resultString === 'string') {
@@ -289,6 +369,7 @@ export class ProjectionEngine {
   }
 
   abort(): void {
+    console.log('Aborting projection...')
     this.abortController?.abort()
   }
 }

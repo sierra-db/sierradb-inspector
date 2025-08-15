@@ -5,6 +5,8 @@ import { PartitionExplorer } from './pages/PartitionExplorer'
 import { StreamExplorer } from './pages/StreamExplorer'
 import { EventLookup } from './pages/EventLookup'
 import { ProjectionRunner } from './pages/ProjectionRunner'
+import { SavedProjectionsPage } from './pages/SavedProjectionsPage'
+import { ProjectionViewPage } from './pages/ProjectionViewPage'
 
 function App() {
   return (
@@ -18,6 +20,8 @@ function App() {
         <Route path="/events" element={<EventLookup />} />
         <Route path="/events/:eventId" element={<EventLookup />} />
         <Route path="/projections" element={<ProjectionRunner />} />
+        <Route path="/saved-projections" element={<SavedProjectionsPage />} />
+        <Route path="/saved-projections/:id" element={<ProjectionViewPage />} />
       </Routes>
     </Layout>
   )
