@@ -111,7 +111,7 @@ export interface SavedProjectionResult {
   eventsProcessed?: number
 }
 
-export type RenderTemplate = 'list' | 'stats' | 'table' | 'custom' | 'auto'
+export type RenderTemplate = 'list' | 'stats' | 'table' | 'collection' | 'custom' | 'auto'
 
 export interface HTMLRenderConfig {
   template: RenderTemplate
