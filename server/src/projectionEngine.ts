@@ -157,10 +157,18 @@ export class ProjectionEngine {
           
           // Start parallel partition processing
           for (let partition = startPartition; partition < endPartition; partition++) {
+            // CRITICAL FIX: Create separate context for each parallel partition to avoid race conditions
+            const partitionContext = await isolate.createContext()
+            
+            // Set up the partition context with the same globals as the main context
+            const jail = partitionContext.global
+            await jail.set('global', jail.derefInto())
+            await script.run(partitionContext)
+            
             const partitionPromise = this.processPartitionOptimized(
               partition,
-              currentState,
-              context,
+              null, // Each partition starts fresh to avoid double-counting
+              partitionContext,
               batchExecutionScript,
               executionScript
             )
@@ -170,10 +178,20 @@ export class ProjectionEngine {
           // Wait for all partitions in this batch to complete
           const results = await Promise.all(partitionPromises)
           
+          // Clean up partition contexts to prevent memory leaks
+          // Note: contexts will be cleaned up when the isolate is disposed
+          
           // Merge results sequentially to maintain state consistency
           for (const result of results) {
-            currentState = result.newState
+            // CRITICAL FIX: Accumulate state instead of overwriting
+            const previousEventCount = currentState?.eventCount || 0
+            currentState = this.accumulateState(currentState, result.newState)
             eventsProcessed += result.eventsProcessed
+            
+            // Debug logging for state accumulation
+            const newEventCount = currentState?.eventCount || 0
+            const partitionEventCount = result.newState?.eventCount || 0
+            console.log(`Partition ${result.partition}: added ${partitionEventCount} events, total eventCount ${previousEventCount} -> ${newEventCount} (+${result.eventsProcessed} events processed)`)
             
             if (result.duration > 100) {
               console.log(`Partition ${result.partition} took ${result.duration}ms`)
@@ -190,7 +208,12 @@ export class ProjectionEngine {
         }
         
         const totalTime = Date.now() - startTime
-        console.log(`Completed projection in ${totalTime}ms, processed ${eventsProcessed} events`)
+        const finalEventCount = currentState?.eventCount || 0
+        console.log(`Completed projection in ${totalTime}ms, processed ${eventsProcessed} events, projection eventCount: ${finalEventCount}`)
+        
+        if (finalEventCount !== eventsProcessed) {
+          console.log(`FINAL DISCREPANCY: processed ${eventsProcessed} events but final eventCount is ${finalEventCount} (difference: ${finalEventCount - eventsProcessed})`)
+        }
 
         // Send final completion progress
         onProgress({
@@ -334,20 +357,23 @@ export class ProjectionEngine {
             if (batch.length === 1) {
               // Use single event processing for batches of 1
               currentState = await this.executeProjectionFunction(context, singleExecutionScript, currentState, batch[0])
+              eventsProcessed += batch.length
             } else {
               // Use batch processing for larger batches
               currentState = await this.executeBatchProjectionFunction(context, batchExecutionScript, currentState, batch)
+              eventsProcessed += batch.length
             }
-            eventsProcessed += batch.length
           } catch (error) {
-            console.error(`Error processing batch in partition ${partition}:`, error)
-            // Process events individually as fallback
+            console.error(`Partition ${partition}: Batch processing failed, falling back to individual processing for ${batch.length} events:`, error)
+            // Process events individually as fallback (don't double-count)
             for (const event of batch) {
               try {
                 currentState = await this.executeProjectionFunction(context, singleExecutionScript, currentState, event)
                 eventsProcessed++
               } catch (singleError) {
                 console.error(`Error processing event ${event.event_id}:`, singleError)
+                // Still count events that failed processing for accurate tracking
+                eventsProcessed++
               }
             }
           }
@@ -366,6 +392,13 @@ export class ProjectionEngine {
     }
     
     const duration = Date.now() - startTime
+    const projectionEventCount = currentState?.eventCount || 0
+    
+    // Log if there's a discrepancy between events processed and projection count
+    if (projectionEventCount !== eventsProcessed) {
+      console.log(`Partition ${partition}: DISCREPANCY - processed ${eventsProcessed} events but projection eventCount is ${projectionEventCount}`)
+    }
+    
     return { partition, newState: currentState, eventsProcessed, duration }
   }
 
@@ -563,6 +596,61 @@ export class ProjectionEngine {
   abort(): void {
     console.log('Aborting projection...')
     this.abortController?.abort()
+  }
+
+  private accumulateState(baseState: any, newState: any): any {
+    if (!baseState) return newState
+    if (!newState) return baseState
+    
+    // Handle arrays specially - concatenate them instead of overwriting
+    if (Array.isArray(baseState) && Array.isArray(newState)) {
+      return [...baseState, ...newState]
+    }
+    
+    // If one is array and other isn't, prioritize the array
+    if (Array.isArray(newState)) return newState
+    if (Array.isArray(baseState)) return baseState
+    
+    // Handle null or primitive values
+    if (typeof newState !== 'object' || newState === null) {
+      return newState
+    }
+    if (typeof baseState !== 'object' || baseState === null) {
+      return newState
+    }
+    
+    // Deep merge objects
+    const result = { ...baseState }
+    
+    for (const [key, value] of Object.entries(newState)) {
+      if (key in result) {
+        const baseValue = result[key]
+        
+        // If both are numbers, add them (for counters like eventCount)
+        if (typeof baseValue === 'number' && typeof value === 'number') {
+          result[key] = baseValue + value
+        }
+        // If both are arrays, concatenate them
+        else if (Array.isArray(baseValue) && Array.isArray(value)) {
+          result[key] = [...baseValue, ...value]
+        }
+        // If both are objects, recursively merge
+        else if (typeof baseValue === 'object' && typeof value === 'object' && 
+                 baseValue !== null && value !== null && 
+                 !Array.isArray(baseValue) && !Array.isArray(value)) {
+          result[key] = this.accumulateState(baseValue, value)
+        }
+        // For other types, use the new value (latest wins)
+        else {
+          result[key] = value
+        }
+      } else {
+        // New property, just add it
+        result[key] = value
+      }
+    }
+    
+    return result
   }
 
   private hashCode(str: string): string {

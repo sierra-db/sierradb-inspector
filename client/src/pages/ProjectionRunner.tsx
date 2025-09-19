@@ -191,33 +191,62 @@ export function ProjectionRunner() {
         throw new Error('No response body')
       }
 
-      // Handle SSE manually
+      // Handle SSE manually with proper buffering for large payloads
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
+      let buffer = ''
 
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
+          // Append new chunk to buffer
+          buffer += decoder.decode(value, { stream: true })
+          
+          // Process complete lines from buffer
+          const lines = buffer.split('\n')
+          // Keep the last incomplete line in the buffer
+          buffer = lines.pop() || ''
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
-                const data = JSON.parse(line.substring(6))
-                if (data.current_partition !== undefined) {
-                  setProgress(data)
-                  
-                  if (data.status === 'completed' || data.status === 'error') {
-                    setIsRunning(false)
+                const jsonString = line.substring(6)
+                // Skip empty data lines
+                if (jsonString.trim()) {
+                  const data = JSON.parse(jsonString)
+                  if (data.current_partition !== undefined) {
+                    setProgress(data)
+                    
+                    if (data.status === 'completed' || data.status === 'error') {
+                      setIsRunning(false)
+                    }
                   }
                 }
               } catch (e) {
-                console.error('Error parsing SSE data:', e)
+                console.error('Error parsing SSE data:', e, 'Line:', line.substring(6))
               }
             }
+          }
+        }
+        
+        // Process any remaining data in buffer
+        if (buffer.trim() && buffer.startsWith('data: ')) {
+          try {
+            const jsonString = buffer.substring(6)
+            if (jsonString.trim()) {
+              const data = JSON.parse(jsonString)
+              if (data.current_partition !== undefined) {
+                setProgress(data)
+                
+                if (data.status === 'completed' || data.status === 'error') {
+                  setIsRunning(false)
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing remaining SSE data:', e, 'Buffer:', buffer.substring(6))
           }
         }
       } finally {
