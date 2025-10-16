@@ -7,8 +7,23 @@ A modern web interface for exploring events in SierraDB - a distributed event so
 - **Partition Explorer** - Browse events across SierraDB's 1,024 logical partitions
 - **Stream Explorer** - Navigate event streams by version numbers
 - **Event Lookup** - Search for specific events by UUID
+- **Projection Runner** - Execute JavaScript projections against event data
 - **Real-time Connection Status** - Monitor SierraDB connectivity
 - **Responsive Design** - Modern UI built with React and Tailwind CSS
+
+## Screenshots
+
+### Partition Explorer
+Browse and explore events across partitions with a condensed table view:
+
+![Partition Explorer - Event List](docs/partition-explorer-1.png)
+
+![Partition Explorer - Event Details](docs/partition-explorer-2.png)
+
+### Projection Runner
+Execute custom JavaScript projections to analyze event data:
+
+![Projection Runner](docs/projection.png)
 
 ## Architecture
 
