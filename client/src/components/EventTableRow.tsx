@@ -1,6 +1,7 @@
 import { SierraDBEvent } from '../types.js'
 import { TableCell, TableRow } from '@/components/ui/table'
 import { JsonViewer } from '@/components/JsonViewer'
+import { useTimestamp } from '@/contexts/TimestampContext'
 import { 
   ChevronDown,
   ChevronRight,
@@ -49,10 +50,7 @@ interface EventTableRowProps {
 
 export function EventTableRow({ event }: EventTableRowProps) {
   const [expanded, setExpanded] = useState(false)
-  
-  const formatTimestamp = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString()
-  }
+  const { formatTimestamp } = useTimestamp()
 
   return (
     <>

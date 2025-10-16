@@ -13,6 +13,7 @@ import {
   Plus
 } from 'lucide-react'
 import { useSavedProjections } from '@/hooks/useSavedProjections'
+import { TimestampToggle } from './TimestampToggle'
 
 interface LayoutProps {
   children: ReactNode
@@ -34,14 +35,14 @@ export function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       <div className="flex h-screen">
-        <nav className="w-64 bg-card border-r border-border">
+        <nav className="w-64 bg-card border-r border-border flex flex-col">
           <div className="p-6">
             <h1 className="text-xl font-bold text-foreground">
               SierraDB Inspector
             </h1>
           </div>
           
-          <div className="px-3 space-y-1">
+          <div className="px-3 space-y-1 flex-1">
             {/* Main Navigation */}
             {navigation.map((item) => {
               const Icon = item.icon
@@ -132,6 +133,11 @@ export function Layout({ children }: LayoutProps) {
                 </div>
               )}
             </div>
+          </div>
+          
+          {/* Bottom section with timestamp toggle */}
+          <div className="p-3 border-t border-border">
+            <TimestampToggle />
           </div>
         </nav>
 
