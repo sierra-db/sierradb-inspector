@@ -1,4 +1,4 @@
-import { decode } from 'cbor-x/decode'
+import { decode } from 'cbor-x'
 
 export type DataFormat = 'json' | 'cbor' | 'binary' | 'text'
 

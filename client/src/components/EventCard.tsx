@@ -1,6 +1,5 @@
 import { SierraDBEvent } from '../types.js'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { JsonViewer } from '@/components/JsonViewer'
 import { 
   Calendar, 

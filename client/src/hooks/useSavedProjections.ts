@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { SavedProjection, SavedProjectionResult, ProjectionProgress } from '../types.js'
 import { SavedProjectionsStorage } from '../utils/savedProjections.js'
-import { api } from '../lib/api.js'
 
 export function useSavedProjections() {
   const [projections, setProjections] = useState<SavedProjection[]>([])

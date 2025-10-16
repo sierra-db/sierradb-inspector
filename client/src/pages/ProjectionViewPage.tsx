@@ -31,7 +31,7 @@ export function ProjectionViewPage() {
   
   const [viewMode, setViewMode] = useState<'html' | 'json'>('html')
   const [autoRefresh, setAutoRefresh] = useState(false)
-  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null)
+  const [refreshInterval, setRefreshInterval] = useState<number | null>(null)
 
   const projection = getProjection(id!)
   const storedResult = getResult(id!)
