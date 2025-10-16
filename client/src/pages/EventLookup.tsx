@@ -5,7 +5,7 @@ import { useURLState } from '@/hooks/useURLState'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { EventCard } from '@/components/EventCard'
+import { EventTable } from '@/components/EventTable'
 import { api } from '@/lib/api'
 import { 
   Search, 
@@ -163,7 +163,7 @@ export function EventLookup() {
             </Button>
           </div>
           
-          <EventCard event={event} />
+          <EventTable events={[event]} />
           
           <Card>
             <CardHeader>

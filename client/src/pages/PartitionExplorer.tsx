@@ -4,7 +4,7 @@ import { useURLState } from '@/hooks/useURLState'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { EventCard } from '@/components/EventCard'
+import { EventTable } from '@/components/EventTable'
 import { api } from '@/lib/api'
 import { 
   HardDrive, 
@@ -257,11 +257,13 @@ export function PartitionExplorer() {
               </CardContent>
             </Card>
           ) : (
-            <div>
-              {data.events.map((event) => (
-                <EventCard key={event.event_id} event={event} />
-              ))}
-            </div>
+            <EventTable 
+              events={data.events}
+              hasMore={data.has_more}
+              canLoadPrevious={data.events.length > 0 && data.events[0].partition_sequence > 0}
+              onLoadNext={loadNext}
+              onLoadPrevious={loadPrevious}
+            />
           )}
         </div>
       )}

@@ -4,7 +4,7 @@ import { useURLState } from '@/hooks/useURLState'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { EventCard } from '@/components/EventCard'
+import { EventTable } from '@/components/EventTable'
 import { api } from '@/lib/api'
 import { 
   FileText, 
@@ -232,9 +232,13 @@ export function StreamExplorer() {
               <div className="mb-4 text-sm text-muted-foreground">
                 Events are ordered by stream version. Each event has a unique version number within its stream.
               </div>
-              {data.events.map((event) => (
-                <EventCard key={event.event_id} event={event} />
-              ))}
+              <EventTable 
+                events={data.events}
+                hasMore={data.has_more}
+                canLoadPrevious={data.events.length > 0 && data.events[0].stream_version > 0}
+                onLoadNext={loadNext}
+                onLoadPrevious={loadPrevious}
+              />
             </div>
           )}
         </div>
