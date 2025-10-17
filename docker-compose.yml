@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  sierradb-inspector:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - SIERRADB_URL=redis://sierradb:9090
+    depends_on:
+      - sierradb
+    restart: unless-stopped
+
+  # Example SierraDB service (adjust as needed for your setup)
+  sierradb:
+    image: redis:7-alpine
+    ports:
+      - "9090:6379"
+    restart: unless-stopped
+    # Note: Replace this with actual SierraDB image when available
+    # This is just a Redis placeholder for development

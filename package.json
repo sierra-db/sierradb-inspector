@@ -1,6 +1,6 @@
 {
   "name": "sierradb-inspector",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Web interface for exploring events in SierraDB",
   "scripts": {
     "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",

@@ -10,7 +10,8 @@
       "Bash(npm run lint)",
       "Bash(npm uninstall:*)",
       "Bash(npm run client:build:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(docker build:*)"
     ],
     "deny": []
   }

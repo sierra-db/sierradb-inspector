@@ -40,6 +40,16 @@ This is a monorepo containing:
 
 ## Quick Start
 
+### Option 1: Using Docker (Recommended)
+
+```bash
+docker run -p 3001:3001 -e SIERRADB_URL=redis://your-sierradb-host:9090 tqwewe/sierradb-inspector
+```
+
+Access the application at http://localhost:3001
+
+### Option 2: Development Setup
+
 1. **Install dependencies**
    ```bash
    npm install
