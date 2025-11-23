@@ -43,7 +43,7 @@ This is a monorepo containing:
 ### Option 1: Using Docker (Recommended)
 
 ```bash
-docker run -p 3001:3001 -e SIERRADB_URL=redis://your-sierradb-host:9090 tqwewe/sierradb-inspector
+docker run -p 3001:3001 --network host -e SIERRADB_URL=redis://127.0.0.1:9090 tqwewe/sierradb-inspector
 ```
 
 Access the application at http://localhost:3001
