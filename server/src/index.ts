@@ -20,6 +20,11 @@ const sierraDBUrl = process.env.SIERRADB_URL || 'redis://localhost:9090'
 app.use(cors())
 app.use(express.json())
 
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static('/app/client/dist'))
+}
+
 const sierraDB = new SierraDBClient(sierraDBUrl)
 const projectionEngine = new ProjectionEngine(sierraDB)
 const debugSessionManager = new DebugSessionManager(sierraDB)
@@ -68,6 +73,16 @@ const StreamScanQuerySchema = z.object({
 
 const EventGetParamsSchema = z.object({
   event_id: z.string(),
+})
+
+app.get('/api/health', async (req, res) => {
+  try {
+    const result = await sierraDB.ping()
+    res.json({ status: 'healthy', sierradb: result })
+  } catch (error) {
+    console.error('Health check error:', error)
+    res.status(500).json({ status: 'unhealthy', error: 'Failed to connect to SierraDB' })
+  }
 })
 
 app.get('/api/ping', async (req, res) => {
@@ -291,6 +306,13 @@ app.delete('/api/projections/debug/:sessionId', async (req, res) => {
     res.status(500).json({ error: 'Failed to destroy debug session' })
   }
 })
+
+// Catch-all handler for React Router (must be last)
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    res.sendFile('/app/client/dist/index.html')
+  })
+}
 
 async function startServer() {
   try {
